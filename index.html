@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Market AI Scanner</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --card-bg: #1e293b;
+            --accent-blue: #38bdf8;
+            --green: #4ade80;
+            --red: #f87171;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #334155;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            margin: 0; padding: 20px;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding-bottom: 20px; border-bottom: 1px solid var(--border); margin-bottom: 25px;
+        }
+        h1 { margin: 0; font-size: 1.6rem; color: var(--accent-blue); }
+        .subtitle { font-size: 0.85rem; color: var(--text-muted); }
+        
+        /* Tabs Styling */
+        .tabs {
+            display: flex; gap: 10px; margin-bottom: 25px; border-bottom: 1px solid var(--border);
+            padding-bottom: 10px; flex-wrap: wrap;
+        }
+        .tab-btn {
+            background: #1e293b; border: 1px solid var(--border); color: var(--text-muted);
+            padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .tab-btn:hover { background: #334155; color: #fff; }
+        .tab-btn.active {
+            background: var(--accent-blue); color: #0f172a; border-color: var(--accent-blue);
+        }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* Section Layout */
+        .horizon-title {
+            font-size: 1.2rem; margin: 25px 0 15px 0; color: #e2e8f0;
+            display: flex; align-items: center; gap: 8px; border-left: 4px solid var(--accent-blue);
+            padding-left: 10px;
+        }
+        .grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px;
+        }
+        
+        .card {
+            background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px;
+            padding: 18px; transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.4); }
+
+        .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+        .symbol { font-size: 1.3rem; font-weight: 700; color: #fff; }
+        .name { font-size: 0.82rem; color: var(--text-muted); }
+        .price { font-size: 1.2rem; font-weight: 700; text-align: right; }
+        .positive { color: var(--green); }
+        .negative { color: var(--red); }
+
+        .metrics {
+            display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+            background: #0f172a; padding: 10px; border-radius: 8px; margin: 12px 0;
+            font-size: 0.8rem;
+        }
+        .metric-item { text-align: center; }
+        .metric-label { color: var(--text-muted); margin-bottom: 2px; }
+        .metric-value { font-weight: 600; }
+
+        .btn-dive {
+            width: 100%; background: #334155; color: var(--text-main); border: none;
+            padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;
+            transition: background 0.2s;
+        }
+        .btn-dive:hover { background: var(--accent-blue); color: #0f172a; }
+
+        /* Modal */
+        .modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.75); justify-content: center; align-items: center; z-index: 1000;
+        }
+        .modal-content {
+            background: var(--card-bg); border-radius: 12px; width: 90%; max-width: 650px;
+            padding: 24px; position: relative; border: 1px solid var(--border);
+        }
+        .close-btn {
+            position: absolute; top: 15px; right: 20px; font-size: 1.5rem; color: var(--text-muted);
+            cursor: pointer;
+        }
+        .chart-container { height: 260px; margin-top: 15px; }
+
+        /* Action Buttons */
+        .actions {
+            display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;
+        }
+        .action-btn {
+            background: #1e293b; border: 1px solid var(--border); color: var(--text-main);
+            padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.85rem;
+        }
+        .action-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>📈 Global Market Scanner</h1>
+                <div class="subtitle">Last Scanned: 2026-08-15 01:58 UTC</div>
+            </div>
+            <div class="actions">
+                <button class="action-btn" onclick="openTokenModal()">🔑 Configure Trigger</button>
+                <button class="action-btn" onclick="triggerWorkflow()">⚡ Trigger Scan Now</button>
+            </div>
+        </header>
+
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('DOW30')"> Dow 30</button>
+            <button class="tab-btn" onclick="switchTab('NASDAQ100')">🚀 Nasdaq 100</button>
+            <button class="tab-btn" onclick="switchTab('SP500')">🏛️ S&P 500</button>
+            <button class="tab-btn" onclick="switchTab('SGX')">🇸🇬 SGX</button>
+        </div>
+<div id="tab-DOW30" class="tab-content active"><div class="horizon-title">⚡ Short-Term Tactical Plays (1–4 Weeks)</div><div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="symbol">BA</div>
+                            <div class="name">Boeing Company (The)</div>
+                        </div>
+                        <div class="price">
+                            $231.67<br>
+                            <span class="positive" style="font-size: 0.85rem;">+0.58%</span>
+                        </div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">RSI (14)</div>
+                            <div class="metric-value">64.4</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Div Yield</div>
+                            <div class="metric-value">0%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">P/E Ratio</div>
+                            <div class="metric-value">56.2</div>
+                        </div>
+                    </div>
+                    <button class="btn-dive" onclick='openModal("BA", "Boeing Company (The)", [234.54, 231.68, 224.95, 223.11, 222.28, 215.51, 217.11, 218.12, 214.34, 214.03, 209.48, 204.8, 208.65, 209.23, 209.52, 211.5, 221.56, 214.01, 220.9, 216.14, 233.49, 237.16, 240.19, 232.19, 234.42, 232.79, 233.24, 231.2, 230.33, 231.67], ["Jul 06", "Jul 07", "Jul 08", "Jul 09", "Jul 10", "Jul 13", "Jul 14", "Jul 15", "Jul 16", "Jul 17", "Jul 20", "Jul 21", "Jul 22", "Jul 23", "Jul 24", "Jul 27", "Jul 28", "Jul 29", "Jul 30", "Jul 31", "Aug 03", "Aug 04", "Aug 05", "Aug 06", "Aug 07", "Aug 10", "Aug 11", "Aug 12", "Aug 13", "Aug 14"])'>Deep Dive Chart</button>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="symbol">CVX</div>
+                            <div class="name">Chevron Corporation</div>
+                        </div>
+                        <div class="price">
+                            $200.0<br>
+                            <span class="positive" style="font-size: 0.85rem;">+1.16%</span>
+                        </div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">RSI (14)</div>
+                            <div class="metric-value">62.2</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Div Yield</div>
+                            <div class="metric-value">360.0%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">P/E Ratio</div>
+                            <div class="metric-value">15.3</div>
+                        </div>
+                    </div>
+                    <button class="btn-dive" onclick='openModal("CVX", "Chevron Corporation", [168.1, 174.01, 175.97, 174.05, 176.4, 182.2, 181.76, 181.6, 183.86, 187.38, 189.71, 191.07, 192.98, 194.42, 194.79, 190.0, 187.58, 191.86, 192.31, 196.83, 193.18, 190.4, 186.41, 189.23, 186.56, 194.91, 196.66, 196.6, 197.7, 200.0], ["Jul 06", "Jul 07", "Jul 08", "Jul 09", "Jul 10", "Jul 13", "Jul 14", "Jul 15", "Jul 16", "Jul 17", "Jul 20", "Jul 21", "Jul 22", "Jul 23", "Jul 24", "Jul 27", "Jul 28", "Jul 29", "Jul 30", "Jul 31", "Aug 03", "Aug 04", "Aug 05", "Aug 06", "Aug 07", "Aug 10", "Aug 11", "Aug 12", "Aug 13", "Aug 14"])'>Deep Dive Chart</button>
+                </div>
+                </div><div class="horizon-title">📈 Mid-Term Growth & Trend (1–6 Months)</div><div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="symbol">AXP</div>
+                            <div class="name">American Express Company</div>
+                        </div>
+                        <div class="price">
+                            $342.48<br>
+                            <span class="negative" style="font-size: 0.85rem;">-0.34%</span>
+                        </div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">RSI (14)</div>
+                            <div class="metric-value">58.2</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Div Yield</div>
+                            <div class="metric-value">111.0%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">P/E Ratio</div>
+                            <div class="metric-value">17.0</div>
+                        </div>
+                    </div>
+                    <button class="btn-dive" onclick='openModal("AXP", "American Express Company", [356.03, 349.58, 336.39, 346.72, 350.58, 354.43, 355.06, 358.44, 361.57, 355.35, 351.93, 350.79, 348.74, 340.84, 326.17, 335.39, 336.63, 331.5, 337.52, 336.25, 344.72, 346.71, 348.99, 342.6, 340.91, 338.86, 340.81, 344.08, 343.65, 342.48], ["Jul 06", "Jul 07", "Jul 08", "Jul 09", "Jul 10", "Jul 13", "Jul 14", "Jul 15", "Jul 16", "Jul 17", "Jul 20", "Jul 21", "Jul 22", "Jul 23", "Jul 24", "Jul 27", "Jul 28", "Jul 29", "Jul 30", "Jul 31", "Aug 03", "Aug 04", "Aug 05", "Aug 06", "Aug 07", "Aug 10", "Aug 11", "Aug 12", "Aug 13", "Aug 14"])'>Deep Dive Chart</button>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="symbol">JPM</div>
+                            <div class="name">JP Morgan Chase & Co.</div>
+                        </div>
+                        <div class="price">
+                            $362.84<br>
+                            <span class="negative" style="font-size: 0.85rem;">-0.07%</span>
+                        </div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">RSI (14)</div>
+                            <div class="metric-value">57.8</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Div Yield</div>
+                            <div class="metric-value">165.0%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">P/E Ratio</div>
+                            <div class="metric-value">14.5</div>
+                        </div>
+                    </div>
+                    <button class="btn-dive" onclick='openModal("JPM", "JP Morgan Chase & Co.", [337.72, 339.22, 330.62, 335.47, 336.47, 334.53, 342.89, 346.91, 343.15, 341.1, 338.87, 345.23, 348.21, 349.9, 353.21, 356.2, 357.31, 344.71, 350.85, 351.79, 352.64, 357.52, 359.24, 356.3, 357.52, 359.79, 362.04, 365.18, 363.11, 362.84], ["Jul 06", "Jul 07", "Jul 08", "Jul 09", "Jul 10", "Jul 13", "Jul 14", "Jul 15", "Jul 16", "Jul 17", "Jul 20", "Jul 21", "Jul 22", "Jul 23", "Jul 24", "Jul 27", "Jul 28", "Jul 29", "Jul 30", "Jul 31", "Aug 03", "Aug 04", "Aug 05", "Aug 06", "Aug 07", "Aug 10", "Aug 11", "Aug 12", "Aug 13", "Aug 14"])'>Deep Dive Chart</button>
+                </div>
+                </div><div class="horizon-title">🛡️ Long-Term Quality Compounders (6–12+ Months)</div><div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="symbol">AMGN</div>
+                            <div class="name">Amgen Inc.</div>
+                        </div>
+                        <div class="price">
+                            $415.21<br>
+                            <span class="negative" style="font-size: 0.85rem;">-0.63%</span>
+                        </div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">RSI (14)</div>
+                            <div class="metric-value">73.1</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Div Yield</div>
+                            <div class="metric-value">241.0%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">P/E Ratio</div>
+                            <div class="metric-value">17.1</div>
+                        </div>
+                    </div>
+                    <button class="btn-dive" onclick='openModal("AMGN", "Amgen Inc.", [366.44, 368.1, 367.99, 363.62, 363.39, 360.45, 355.25, 358.32, 371.58, 366.29, 364.17, 366.24, 366.05, 371.5, 376.04, 376.26, 393.1, 387.64, 387.64, 385.16, 378.87, 390.02, 407.83, 404.85, 410.95, 417.2, 414.3, 416.18, 417.84, 415.21], ["Jul 06", "Jul 07", "Jul 08", "Jul 09", "Jul 10", "Jul 13", "Jul 14", "Jul 15", "Jul 16", "Jul 17", "Jul 20", "Jul 21", "Jul 22", "Jul 23", "Jul 24", "Jul 27", "Jul 28", "Jul 29", "Jul 30", "Jul 31", "Aug 03", "Aug 04", "Aug 05", "Aug 06", "Aug 07", "Aug 10", "Aug 11", "Aug 12", "Aug 13", "Aug 14"])'>Deep Dive Chart</button>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="symbol">CSCO</div>
+                            <div class="name">Cisco Systems, Inc.</div>
+                        </div>
+                        <div class="price">
+                            $111.68<br>
+                            <span class="negative" style="font-size: 0.85rem;">-1.58%</span>
+                        </div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">RSI (14)</div>
+                            <div class="metric-value">45.7</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Div Yield</div>
+                            <div class="metric-value">148.0%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">P/E Ratio</div>
+                            <div class="metric-value">20.5</div>
+                        </div>
+                    </div>
+                    <button class="btn-dive" onclick='openModal("CSCO", "Cisco Systems, Inc.", [113.98, 111.79, 113.82, 118.31, 121.31, 119.25, 117.09, 111.77, 109.66, 111.94, 110.7, 112.18, 112.21, 112.76, 114.17, 114.57, 115.58, 112.48, 113.56, 115.99, 115.86, 121.74, 121.5, 120.88, 121.43, 122.57, 120.43, 123.88, 113.47, 111.68], ["Jul 06", "Jul 07", "Jul 08", "Jul 09", "Jul 10", "Jul 13", "Jul 14", "Jul 15", "Jul 16", "Jul 17", "Jul 20", "Jul 21", "Jul 22", "Jul 23", "Jul 24", "Jul 27", "Jul 28", "Jul 29", "Jul 30", "Jul 31", "Aug 03", "Aug 04", "Aug 05", "Aug 06", "Aug 07", "Aug 10", "Aug 11", "Aug 12", "Aug 13", "Aug 14"])'>Deep Dive Chart</button>
+                </div>
+                </div></div><div id="tab-NASDAQ100" class="tab-content "><div class="horizon-title">⚡ Short-Term Tactical Plays (1–4 Weeks)</div><div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="symbol">AMD</div>
+                            <div class="name">Advanced Micro Devices, Inc.</div>
+                        </div>
+                        <div class="price">
+                            $514.39<br>
+                            <span class="positive" style="font-size: 0.85rem;">+6.5%</span>
+                        </div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">RSI (14)</div>
+                            <div class="metric-value">53.5</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Div Yield</div>
+                            <div class="metric-value">0%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">P/E Ratio</div>
+                            <div class="metric-value">33.3</div>
+                        </div>
+                    </div>
+                    <button class="btn-dive" onclick='openModal("AMD", "Advanced Micro Devices, Inc.", [552.05, 516.11, 517.41, 546.72, 557.89, 534.39, 548.13, 529.14, 500.94, 495.76, 503.57, 544.43, 552.33, 539.69, 521.95, 494.95, 454.62, 429.56, 485.39, 476.15, 484.64, 518.58, 482.05, 489.28, 483.36, 469.56, 474.32, 482.93, 483.01, 514.39], ["Jul 06", "Jul 07", "Jul 08", "Jul 09", "Jul 10", "Jul 13", "Jul 14", "Jul 15", "Jul 16", "Jul 17", "Jul 20", "Jul 21", "Jul 22", "Jul 23", "Jul 24", "Jul 27", "Jul 28", "Jul 29", "Jul 30", "Jul 31", "Aug 03", "Aug 04", "Aug 05", "Aug 06", "Aug 07", "Aug 10", "Aug 11", "Aug 12", "Aug 13", "Aug 14"])'>Deep Dive Chart</button>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="symbol">TXN</div>
+                            <div class="name">Texas Instruments Incorporated</div>
+                        </div>
+                        <div class="price">
+                            $279.58<br>
+                            <span class="positive" style="font-size: 0.85rem;">+2.25%</span>
+                        </div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">RSI (14)</div>
+                            <div class="metric-value">51.1</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Div Yield</div>
+                            <div class="metric-value">208.0%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">P/E Ratio</div>
+                            <div class="metric-value">26.9</div>
+                        </div>
+                    </div>
+                    <button class="btn-dive" onclick='openModal("TXN", "Texas Instruments Incorporated", [301.95, 291.81, 299.79, 306.96, 309.87, 297.05, 303.99, 299.66, 289.74, 282.57, 282.62, 289.82, 292.69, 283.54, 278.16, 277.99, 275.66, 269.92, 277.34, 275.74, 269.04, 283.63, 277.72, 278.4, 286.08, 280.44, 281.24, 276.59, 273.43, 279.58], ["Jul 06", "Jul 07", "Jul 08", "Jul 09", "Jul 10", "Jul 13", "Jul 14", "Jul 15", "Jul 16", "Jul 17", "Jul 20", "Jul 21", "Jul 22", "Jul 23", "Jul 24", "Jul 27", "Jul 28", "Jul 29", "Jul 30", "Jul 31", "Aug 03", "Aug 04", "Aug 05", "Aug 06", "Aug 07", "Aug 10", "Aug 11", "Aug 12", "Aug 13", "Aug 14"])'>Deep Dive Chart</button>
+                </div>
+                </div><div class="horizon-title">📈 Mid-Term Growth & Trend (1–6 Months)</div><div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="symbol">AVGO</div>
+                            <div class="name">Broadcom Inc.</div>
+                        </div>
+                        <div class="price">
+                            $392.99<br>
+                            <span class="negative" style="font-size: 0.85rem;">-5.94%</span>
+                        </div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">RSI (14)</div>
+                            <div class="metric-value">54.5</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Div Yield</div>
+                            <div class="metric-value">62.0%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">P/E Ratio</div>
+                            <div class="metric-value">20.1</div>
+                        </div>
+                    </div>
+                    <button class="btn-dive" onclick='openModal("AVGO", "Broadcom Inc.", [373.9, 370.78, 388.69, 401.11, 399.97, 384.05, 389.11, 394.28, 374.45, 370.83, 378.16, 386.5, 396.81, 392.47, 381.92, 383.22, 380.91, 370.32, 387.84, 389.28, 392.23, 418.16, 418.28, 420.57, 427.76, 422.4, 416.08, 416.05, 417.82, 392.99], ["Jul 06", "Jul 07", "Jul 08", "Jul 09", "Jul 10", "Jul 13", "Jul 14", "Jul 15", "Jul 16", "Jul 17", "Jul 20", "Jul 21", "Jul 22", "Jul 23", "Jul 24", "Jul 27", "Jul 28", "Jul 29", "Jul 30", "Jul 31", "Aug 03", "Aug 04", "Aug 05", "Aug 06", "Aug 07", "Aug 10", "Aug 11", "Aug 12", "Aug 13", "Aug 14"])'>Deep Dive Chart</button>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="symbol">VRTX</div>
+                            <div class="name">Vertex Pharmaceuticals Incorpor</div>
+                        </div>
+                        <div class="price">
+                            $505.75<br>
+                            <span class="negative" style="font-size: 0.85rem;">-2.07%</span>
+                        </div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">RSI (14)</div>
+                            <div class="metric-value">61.6</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Div Yield</div>
+                            <div class="metric-value">0%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">P/E Ratio</div>
+                            <div class="metric-value">23.2</div>
+                        </div>
+                    </div>
+                    <button class="btn-dive" onclick='openModal("VRTX", "Vertex Pharmaceuticals Incorpor", [529.59, 522.25, 498.43, 496.5, 485.39, 480.25, 476.31, 477.08, 486.03, 485.65, 480.5, 482.0, 472.57, 473.09, 477.36, 479.0, 490.39, 483.33, 481.7, 477.1, 470.72, 478.71, 484.83, 484.03, 496.07, 523.91, 529.65, 525.73, 516.44, 505.75], ["Jul 06", "Jul 07", "Jul 08", "Jul 09", "Jul 10", "Jul 13", "Jul 14", "Jul 15", "Jul 16", "Jul 17", "Jul 20", "Jul 21", "Jul 22", "Jul 23", "Jul 24", "Jul 27", "Jul 28", "Jul 29", "Jul 30", "Jul 31", "Aug 03", "Aug 04", "Aug 05", "Aug 06", "Aug 07", "Aug 10", "Aug 11", "Aug 12", "Aug 13", "Aug 14"])'>Deep Dive Chart</button>
+                </div>
+                </div><div class="horizon-title">🛡️ Long-Term Quality Compounders (6–12+ Months)</div><div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="symbol">MSFT</div>
+                            <div class="name">Microsoft Corporation</div>
+                        </div>
+                        <div class="price">
+                            $495.4<br>
+                            <span class="negative" style="font-size: 0.85rem;">-0.3%</span>
+                        </div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">RSI (14)</div>
+                            <div class="metric-value">84.8</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Div Yield</div>
+                            <div class="metric-value">73.0%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">P/E Ratio</div>
+                            <div class="metric-value">21.0</div>
+                        </div>
+                    </div>
+                    <button class="btn-dive" onclick='openModal("MSFT", "Microsoft Corporation", [386.74, 388.84, 383.34, 384.36, 385.1, 390.99, 384.93, 395.63, 401.1, 393.82, 402.29, 397.75, 390.34, 381.58, 381.7, 389.1, 393.35, 390.54, 451.1, 464.72, 487.65, 492.81, 487.46, 499.86, 499.99, 506.06, 503.81, 492.43, 496.88, 495.4], ["Jul 06", "Jul 07", "Jul 08", "Jul 09", "Jul 10", "Jul 13", "Jul 14", "Jul 15", "Jul 16", "Jul 17", "Jul 20", "Jul 21", "Jul 22", "Jul 23", "Jul 24", "Jul 27", "Jul 28", "Jul 29", "Jul 30", "Jul 31", "Aug 03", "Aug 04", "Aug 05", "Aug 06", "Aug 07", "Aug 10", "Aug 11", "Aug 12", "Aug 13", "Aug 14"])'>Deep Dive Chart</button>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="symbol">NVDA</div>
+                            <div class="name">NVIDIA Corporation</div>
+                        </div>
+                        <div class="price">
+                            $225.16<br>
+                            <span class="negative" style="font-size: 0.85rem;">-0.06%</span>
+                        </div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">RSI (14)</div>
+                            <div class="metric-value">75.4</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Div Yield</div>
+                            <div class="metric-value">44.0%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">P/E Ratio</div>
+                            <div class="metric-value">17.6</div>
+                        </div>
+                    </div>
+                    <button class="btn-dive" onclick='openModal("NVDA", "NVIDIA Corporation", [195.55, 196.93, 204.12, 202.78, 210.96, 203.53, 211.8, 212.5, 207.4, 202.81, 203.28, 207.29, 212.06, 208.76, 206.84, 196.51, 197.01, 190.01, 195.04, 200.75, 206.64, 211.94, 219.22, 218.99, 223.96, 217.55, 217.5, 224.09, 225.3, 225.16], ["Jul 06", "Jul 07", "Jul 08", "Jul 09", "Jul 10", "Jul 13", "Jul 14", "Jul 15", "Jul 16", "Jul 17", "Jul 20", "Jul 21", "Jul 22", "Jul 23", "Jul 24", "Jul 27", "Jul 28", "Jul 29", "Jul 30", "Jul 31", "Aug 03", "Aug 04", "Aug 05", "Aug 06", "Aug 07", "Aug 10", "Aug 11", "Aug 12", "Aug 13", "Aug 14"])'>Deep Dive Chart</button>
+                </div>
+                </div></div><div id="tab-SP500" class="tab-content "><div class="horizon-title">⚡ Short-Term Tactical Plays (1–4 Weeks)</div><div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="symbol">XOM</div>
+                            <div class="name">ExxonMobil Holdings Corporation</div>
+                        </div>
+                        <div class="price">
+                            $160.1<br>
+                            <span class="positive" style="font-size: 0.85rem;">+0.94%</span>
+                        </div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">RSI (14)</div>
+                            <div class="metric-value">60.5</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Div Yield</div>
+                            <div class="metric-value">260.0%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">P/E Ratio</div>
+                            <div class="metric-value">15.0</div>
+                        </div>
+                    </div>
+                    <button class="btn-dive" onclick='openModal("XOM", "ExxonMobil Holdings Corporation", [136.44, 141.69, 141.13, 137.46, 138.88, 144.51, 145.09, 144.51, 145.95, 147.36, 148.36, 151.71, 154.45, 156.89, 156.94, 154.77, 153.04, 156.75, 156.97, 155.44, 155.06, 153.96, 151.63, 154.84, 153.04, 159.79, 159.8, 159.75, 158.61, 160.1], ["Jul 06", "Jul 07", "Jul 08", "Jul 09", "Jul 10", "Jul 13", "Jul 14", "Jul 15", "Jul 16", "Jul 17", "Jul 20", "Jul 21", "Jul 22", "Jul 23", "Jul 24", "Jul 27", "Jul 28", "Jul 29", "Jul 30", "Jul 31", "Aug 03", "Aug 04", "Aug 05", "Aug 06", "Aug 07", "Aug 10", "Aug 11", "Aug 12", "Aug 13", "Aug 14"])'>Deep Dive Chart</button>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="symbol">CVX</div>
+                            <div class="name">Chevron Corporation</div>
+                        </div>
+                        <div class="price">
+                            $200.0<br>
+                            <span class="positive" style="font-size: 0.85rem;">+1.16%</span>
+                        </div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">RSI (14)</div>
+                            <div class="metric-value">62.2</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Div Yield</div>
+                            <div class="metric-value">360.0%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">P/E Ratio</div>
+                            <div class="metric-value">15.3</div>
+                        </div>
+                    </div>
+                    <button class="btn-dive" onclick='openModal("CVX", "Chevron Corporation", [168.1, 174.01, 175.97, 174.05, 176.4, 182.2, 181.76, 181.6, 183.86, 187.38, 189.71, 191.07, 192.98, 194.42, 194.79, 190.0, 187.58, 191.86, 192.31, 196.83, 193.18, 190.4, 186.41, 189.23, 186.56, 194.91, 196.66, 196.6, 197.7, 200.0], ["Jul 06", "Jul 07", "Jul 08", "Jul 09", "Jul 10", "Jul 13", "Jul 14", "Jul 15", "Jul 16", "Jul 17", "Jul 20", "Jul 21", "Jul 22", "Jul 23", "Jul 24", "Jul 27", "Jul 28", "Jul 29", "Jul 30", "Jul 31", "Aug 03", "Aug 04", "Aug 05", "Aug 06", "Aug 07", "Aug 10", "Aug 11", "Aug 12", "Aug 13", "Aug 14"])'>Deep Dive Chart</button>
+                </div>
+                </div><div class="horizon-title">📈 Mid-Term Growth & Trend (1–6 Months)</div><div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="symbol">BRK-B</div>
+                            <div class="name">Berkshire Hathaway Inc. New</div>
+                        </div>
+                        <div class="price">
+                            $504.03<br>
+                            <span class="negative" style="font-size: 0.85rem;">-0.57%</span>
+                        </div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">RSI (14)</div>
+                            <div class="metric-value">54.9</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Div Yield</div>
+                            <div class="metric-value">0%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">P/E Ratio</div>
+                            <div class="metric-value">22.9</div>
+                        </div>
+                    </div>
+                    <button class="btn-dive" onclick='openModal("BRK-B", "Berkshire Hathaway Inc. New", [506.58, 504.0, 494.79, 495.45, 493.71, 496.85, 491.09, 488.35, 493.12, 490.91, 491.25, 489.65, 489.39, 490.85, 494.93, 497.18, 512.37, 509.16, 509.68, 511.54, 513.14, 517.22, 518.85, 524.61, 521.8, 529.42, 516.38, 510.0, 506.93, 504.03], ["Jul 06", "Jul 07", "Jul 08", "Jul 09", "Jul 10", "Jul 13", "Jul 14", "Jul 15", "Jul 16", "Jul 17", "Jul 20", "Jul 21", "Jul 22", "Jul 23", "Jul 24", "Jul 27", "Jul 28", "Jul 29", "Jul 30", "Jul 31", "Aug 03", "Aug 04", "Aug 05", "Aug 06", "Aug 07", "Aug 10", "Aug 11", "Aug 12", "Aug 13", "Aug 14"])'>Deep Dive Chart</button>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="symbol">LLY</div>
+                            <div class="name">Eli Lilly and Company</div>
+                        </div>
+                        <div class="price">
+                            $1180.16<br>
+                            <span class="negative" style="font-size: 0.85rem;">-2.25%</span>
+                        </div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">RSI (14)</div>
+                            <div class="metric-value">47.5</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Div Yield</div>
+                            <div class="metric-value">57.0%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">P/E Ratio</div>
+                            <div class="metric-value">24.9</div>
+                        </div>
+                    </div>
+                    <button class="btn-dive" onclick='openModal("LLY", "Eli Lilly and Company", [1198.34, 1233.79, 1214.09, 1215.21, 1186.88, 1180.18, 1150.89, 1154.97, 1167.5, 1177.42, 1145.26, 1173.73, 1161.35, 1184.17, 1194.32, 1195.82, 1218.91, 1208.29, 1153.32, 1147.2, 1119.76, 1114.08, 1168.19, 1190.23, 1184.01, 1230.18, 1213.28, 1218.53, 1207.27, 1180.16], ["Jul 06", "Jul 07", "Jul 08", "Jul 09", "Jul 10", "Jul 13", "Jul 14", "Jul 15", "Jul 16", "Jul 17", "Jul 20", "Jul 21", "Jul 22", "Jul 23", "Jul 24", "Jul 27", "Jul 28", "Jul 29", "Jul 30", "Jul 31", "Aug 03", "Aug 04", "Aug 05", "Aug 06", "Aug 07", "Aug 10", "Aug 11", "Aug 12", "Aug 13", "Aug 14"])'>Deep Dive Chart</button>
+                </div>
+                </div><div class="horizon-title">🛡️ Long-Term Quality Compounders (6–12+ Months)</div><div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="symbol">MSFT</div>
+                            <div class="name">Microsoft Corporation</div>
+                        </div>
+                        <div class="price">
+                            $495.4<br>
+                            <span class="negative" style="font-size: 0.85rem;">-0.3%</span>
+                        </div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">RSI (14)</div>
+                            <div class="metric-value">84.8</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Div Yield</div>
+                            <div class="metric-value">73.0%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">P/E Ratio</div>
+                            <div class="metric-value">21.0</div>
+                        </div>
+                    </div>
+                    <button class="btn-dive" onclick='openModal("MSFT", "Microsoft Corporation", [386.74, 388.84, 383.34, 384.36, 385.1, 390.99, 384.93, 395.63, 401.1, 393.82, 402.29, 397.75, 390.34, 381.58, 381.7, 389.1, 393.35, 390.54, 451.1, 464.72, 487.65, 492.81, 487.46, 499.86, 499.99, 506.06, 503.81, 492.43, 496.88, 495.4], ["Jul 06", "Jul 07", "Jul 08", "Jul 09", "Jul 10", "Jul 13", "Jul 14", "Jul 15", "Jul 16", "Jul 17", "Jul 20", "Jul 21", "Jul 22", "Jul 23", "Jul 24", "Jul 27", "Jul 28", "Jul 29", "Jul 30", "Jul 31", "Aug 03", "Aug 04", "Aug 05", "Aug 06", "Aug 07", "Aug 10", "Aug 11", "Aug 12", "Aug 13", "Aug 14"])'>Deep Dive Chart</button>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="symbol">NVDA</div>
+                            <div class="name">NVIDIA Corporation</div>
+                        </div>
+                        <div class="price">
+                            $225.16<br>
+                            <span class="negative" style="font-size: 0.85rem;">-0.06%</span>
+                        </div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">RSI (14)</div>
+                            <div class="metric-value">75.4</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Div Yield</div>
+                            <div class="metric-value">44.0%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">P/E Ratio</div>
+                            <div class="metric-value">17.6</div>
+                        </div>
+                    </div>
+                    <button class="btn-dive" onclick='openModal("NVDA", "NVIDIA Corporation", [195.55, 196.93, 204.12, 202.78, 210.96, 203.53, 211.8, 212.5, 207.4, 202.81, 203.28, 207.29, 212.06, 208.76, 206.84, 196.51, 197.01, 190.01, 195.04, 200.75, 206.64, 211.94, 219.22, 218.99, 223.96, 217.55, 217.5, 224.09, 225.3, 225.16], ["Jul 06", "Jul 07", "Jul 08", "Jul 09", "Jul 10", "Jul 13", "Jul 14", "Jul 15", "Jul 16", "Jul 17", "Jul 20", "Jul 21", "Jul 22", "Jul 23", "Jul 24", "Jul 27", "Jul 28", "Jul 29", "Jul 30", "Jul 31", "Aug 03", "Aug 04", "Aug 05", "Aug 06", "Aug 07", "Aug 10", "Aug 11", "Aug 12", "Aug 13", "Aug 14"])'>Deep Dive Chart</button>
+                </div>
+                </div></div><div id="tab-SGX" class="tab-content "><div class="horizon-title">⚡ Short-Term Tactical Plays (1–4 Weeks)</div><div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="symbol">Z74.SI</div>
+                            <div class="name">Singtel</div>
+                        </div>
+                        <div class="price">
+                            S$4.45<br>
+                            <span class="positive" style="font-size: 0.85rem;">+4.71%</span>
+                        </div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">RSI (14)</div>
+                            <div class="metric-value">60.6</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Div Yield</div>
+                            <div class="metric-value">301.0%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">P/E Ratio</div>
+                            <div class="metric-value">20.3</div>
+                        </div>
+                    </div>
+                    <button class="btn-dive" onclick='openModal("Z74.SI", "Singtel", [4.37, 4.35, 4.28, 4.27, 4.29, 4.3, 4.33, 4.34, 4.31, 4.29, 4.34, 4.3, 4.32, 4.34, 4.36, 4.29, 4.32, 4.43, 4.51, 4.48, 4.44, 4.4, 4.43, 4.35, 4.34, 4.3, 4.31, 4.29, 4.25, 4.45], ["Jul 03", "Jul 06", "Jul 07", "Jul 08", "Jul 09", "Jul 10", "Jul 13", "Jul 14", "Jul 15", "Jul 16", "Jul 17", "Jul 20", "Jul 21", "Jul 22", "Jul 23", "Jul 24", "Jul 27", "Jul 28", "Jul 29", "Jul 30", "Jul 31", "Aug 03", "Aug 04", "Aug 05", "Aug 06", "Aug 07", "Aug 11", "Aug 12", "Aug 13", "Aug 14"])'>Deep Dive Chart</button>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="symbol">F34.SI</div>
+                            <div class="name">Wilmar Intl</div>
+                        </div>
+                        <div class="price">
+                            S$3.75<br>
+                            <span class="positive" style="font-size: 0.85rem;">+1.08%</span>
+                        </div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">RSI (14)</div>
+                            <div class="metric-value">39.4</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Div Yield</div>
+                            <div class="metric-value">404.0%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">P/E Ratio</div>
+                            <div class="metric-value">10.9</div>
+                        </div>
+                    </div>
+                    <button class="btn-dive" onclick='openModal("F34.SI", "Wilmar Intl", [3.72, 3.72, 3.75, 3.79, 3.81, 3.85, 3.87, 3.89, 3.91, 3.9, 3.87, 3.88, 3.91, 3.9, 3.86, 3.89, 3.85, 3.87, 3.9, 3.95, 3.93, 3.96, 3.9, 3.97, 3.96, 3.94, 3.96, 3.94, 3.71, 3.75], ["Jul 03", "Jul 06", "Jul 07", "Jul 08", "Jul 09", "Jul 10", "Jul 13", "Jul 14", "Jul 15", "Jul 16", "Jul 17", "Jul 20", "Jul 21", "Jul 22", "Jul 23", "Jul 24", "Jul 27", "Jul 28", "Jul 29", "Jul 30", "Jul 31", "Aug 03", "Aug 04", "Aug 05", "Aug 06", "Aug 07", "Aug 11", "Aug 12", "Aug 13", "Aug 14"])'>Deep Dive Chart</button>
+                </div>
+                </div><div class="horizon-title">📈 Mid-Term Growth & Trend (1–6 Months)</div><div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="symbol">D05.SI</div>
+                            <div class="name">DBS</div>
+                        </div>
+                        <div class="price">
+                            S$75.53<br>
+                            <span class="negative" style="font-size: 0.85rem;">-0.21%</span>
+                        </div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">RSI (14)</div>
+                            <div class="metric-value">62.2</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Div Yield</div>
+                            <div class="metric-value">421.0%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">P/E Ratio</div>
+                            <div class="metric-value">17.0</div>
+                        </div>
+                    </div>
+                    <button class="btn-dive" onclick='openModal("D05.SI", "DBS", [66.05, 66.2, 67.91, 68.37, 69.49, 69.7, 70.04, 71.27, 72.21, 71.71, 71.2, 71.14, 71.24, 72.88, 72.72, 73.16, 73.59, 73.13, 74.21, 74.06, 73.24, 73.66, 73.71, 72.77, 74.29, 75.52, 76.17, 75.05, 75.69, 75.53], ["Jul 03", "Jul 06", "Jul 07", "Jul 08", "Jul 09", "Jul 10", "Jul 13", "Jul 14", "Jul 15", "Jul 16", "Jul 17", "Jul 20", "Jul 21", "Jul 22", "Jul 23", "Jul 24", "Jul 27", "Jul 28", "Jul 29", "Jul 30", "Jul 31", "Aug 03", "Aug 04", "Aug 05", "Aug 06", "Aug 07", "Aug 11", "Aug 12", "Aug 13", "Aug 14"])'>Deep Dive Chart</button>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="symbol">C38U.SI</div>
+                            <div class="name">CapLand IntCom T</div>
+                        </div>
+                        <div class="price">
+                            S$2.43<br>
+                            <span class="negative" style="font-size: 0.85rem;">-0.82%</span>
+                        </div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">RSI (14)</div>
+                            <div class="metric-value">48.1</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Div Yield</div>
+                            <div class="metric-value">437.0%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">P/E Ratio</div>
+                            <div class="metric-value">19.8</div>
+                        </div>
+                    </div>
+                    <button class="btn-dive" onclick='openModal("C38U.SI", "CapLand IntCom T", [2.4, 2.4, 2.41, 2.41, 2.42, 2.44, 2.45, 2.43, 2.46, 2.45, 2.47, 2.45, 2.45, 2.47, 2.48, 2.44, 2.44, 2.47, 2.51, 2.49, 2.49, 2.49, 2.49, 2.5, 2.48, 2.46, 2.51, 2.49, 2.45, 2.43], ["Jul 03", "Jul 06", "Jul 07", "Jul 08", "Jul 09", "Jul 10", "Jul 13", "Jul 14", "Jul 15", "Jul 16", "Jul 17", "Jul 20", "Jul 21", "Jul 22", "Jul 23", "Jul 24", "Jul 27", "Jul 28", "Jul 29", "Jul 30", "Jul 31", "Aug 03", "Aug 04", "Aug 05", "Aug 06", "Aug 07", "Aug 11", "Aug 12", "Aug 13", "Aug 14"])'>Deep Dive Chart</button>
+                </div>
+                </div><div class="horizon-title">🛡️ Long-Term Quality Compounders (6–12+ Months)</div><div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="symbol">O39.SI</div>
+                            <div class="name">OCBC Bank</div>
+                        </div>
+                        <div class="price">
+                            S$31.79<br>
+                            <span class="positive" style="font-size: 0.85rem;">+0.92%</span>
+                        </div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">RSI (14)</div>
+                            <div class="metric-value">72.1</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Div Yield</div>
+                            <div class="metric-value">298.0%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">P/E Ratio</div>
+                            <div class="metric-value">16.5</div>
+                        </div>
+                    </div>
+                    <button class="btn-dive" onclick='openModal("O39.SI", "OCBC Bank", [25.31, 25.49, 26.34, 26.79, 27.32, 27.43, 27.48, 27.88, 28.36, 28.78, 28.56, 28.69, 28.64, 29.18, 28.9, 29.09, 29.29, 28.93, 29.78, 29.1, 29.13, 28.87, 28.72, 28.63, 29.33, 30.3, 31.36, 31.19, 31.5, 31.79], ["Jul 03", "Jul 06", "Jul 07", "Jul 08", "Jul 09", "Jul 10", "Jul 13", "Jul 14", "Jul 15", "Jul 16", "Jul 17", "Jul 20", "Jul 21", "Jul 22", "Jul 23", "Jul 24", "Jul 27", "Jul 28", "Jul 29", "Jul 30", "Jul 31", "Aug 03", "Aug 04", "Aug 05", "Aug 06", "Aug 07", "Aug 11", "Aug 12", "Aug 13", "Aug 14"])'>Deep Dive Chart</button>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="symbol">U11.SI</div>
+                            <div class="name">UOB</div>
+                        </div>
+                        <div class="price">
+                            S$41.8<br>
+                            <span class="positive" style="font-size: 0.85rem;">+0.24%</span>
+                        </div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">RSI (14)</div>
+                            <div class="metric-value">34.9</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Div Yield</div>
+                            <div class="metric-value">421.0%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">P/E Ratio</div>
+                            <div class="metric-value">11.6</div>
+                        </div>
+                    </div>
+                    <button class="btn-dive" onclick='openModal("U11.SI", "UOB", [40.24, 40.52, 41.69, 43.33, 44.34, 44.38, 43.98, 44.38, 44.95, 43.5, 42.47, 42.66, 42.72, 43.04, 43.0, 43.32, 43.5, 43.14, 43.89, 43.88, 43.4, 43.04, 43.25, 43.06, 43.58, 43.3, 42.16, 41.95, 41.7, 41.8], ["Jul 03", "Jul 06", "Jul 07", "Jul 08", "Jul 09", "Jul 10", "Jul 13", "Jul 14", "Jul 15", "Jul 16", "Jul 17", "Jul 20", "Jul 21", "Jul 22", "Jul 23", "Jul 24", "Jul 27", "Jul 28", "Jul 29", "Jul 30", "Jul 31", "Aug 03", "Aug 04", "Aug 05", "Aug 06", "Aug 07", "Aug 11", "Aug 12", "Aug 13", "Aug 14"])'>Deep Dive Chart</button>
+                </div>
+                </div></div>
+    </div>
+
+    <div id="deepDiveModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeModal()">&times;</span>
+            <h3 id="modalTitle" style="margin:0 0 5px 0;"></h3>
+            <div id="modalSubtitle" style="color: var(--text-muted); font-size:0.85rem;"></div>
+            <div class="chart-container">
+                <canvas id="priceChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentChart = null;
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            
+            document.getElementById('tab-' + tabId).classList.add('active');
+            event.currentTarget.classList.add('active');
+        }
+
+        function openModal(symbol, name, prices, dates) {
+            document.getElementById('modalTitle').innerText = symbol + ' - Price Chart';
+            document.getElementById('modalSubtitle').innerText = name;
+            document.getElementById('deepDiveModal').style.display = 'flex';
+
+            const ctx = document.getElementById('priceChart').getContext('2d');
+            if (currentChart) currentChart.destroy();
+
+            currentChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [{
+                        label: 'Price',
+                        data: prices,
+                        borderColor: '#38bdf8',
+                        backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' } },
+                        y: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' } }
+                    }
+                }
+            });
+        }
+
+        function closeModal() {
+            document.getElementById('deepDiveModal').style.display = 'none';
+        }
+
+        function openTokenModal() {
+            const username = prompt("Enter your GitHub Username:", localStorage.getItem("gh_user") || "");
+            const token = prompt("Enter your GitHub PAT (Personal Access Token):", localStorage.getItem("gh_pat") || "");
+            if (username && token) {
+                localStorage.setItem("gh_user", username);
+                localStorage.setItem("gh_pat", token);
+                alert("Saved credentials to local browser storage!");
+            }
+        }
+
+        async function triggerWorkflow() {
+            const user = localStorage.getItem("gh_user");
+            const token = localStorage.getItem("gh_pat");
+            if (!user || !token) {
+                alert("Please configure your GitHub Username and PAT first.");
+                openTokenModal();
+                return;
+            }
+
+            const repo = window.location.pathname.split('/')[1] || "sgx-stock-scanner";
+            const url = `https://api.github.com/repos/${user}/${repo}/actions/workflows/scanner.yml/dispatches`;
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/vnd.github.v3+json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ ref: 'main' })
+                });
+
+                if (response.ok || response.status === 204) {
+                    alert("🚀 Multi-Market scan triggered! View status in GitHub Actions.");
+                } else {
+                    alert("Error triggering workflow. Please check your PAT permissions or branch name.");
+                }
+            } catch (e) {
+                alert("Failed to connect to GitHub API.");
+            }
+        }
+    </script>
+</body>
+</html>
