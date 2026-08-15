@@ -6,21 +6,21 @@ on:
       - main
       - master
   schedule:
-    - cron: '0 0 * * *' # Runs daily automatically
-  workflow_dispatch: # Enables manual "Run workflow" button
+    - cron: '0 0 * * *'
+  workflow_dispatch:
 
 jobs:
   build-and-run:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: write # Grants GitHub permission to update your repo
+      contents: write
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.head_ref }}
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -40,3 +40,4 @@ jobs:
         with:
           commit_message: "Auto-update index.html [skip ci]"
           file_pattern: "index.html"
+          push_options: '--force'
