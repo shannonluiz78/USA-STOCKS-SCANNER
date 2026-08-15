@@ -6,40 +6,37 @@ on:
       - main
       - master
   schedule:
-    - cron: '0 0 * * *' # Runs once daily automatically
-  workflow_dispatch: # Enables manual run button
+    - cron: '0 0 * * *' # Runs daily automatically
+  workflow_dispatch: # Enables manual "Run workflow" button
 
 jobs:
   build-and-run:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: write
+      contents: write # Grants GitHub permission to update your repo
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          ref: ${{ github.head_ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Install Required Python Libraries
+      - name: Install All Python Libraries
         run: |
           python -m pip install --upgrade pip
-          pip install yfinance pandas requests beautifulsoup4 lxml
+          pip install yfinance pandas numpy requests beautifulsoup4 lxml ta plotly scipy
 
       - name: Run Market Scanner Script
         run: python scanner.py
 
-      - name: Commit and Push Updated index.html
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add index.html
-          git commit -m "Auto-update index.html [skip ci]" || echo "No changes to commit"
-          git pull --rebase origin main || git pull --rebase origin master || true
-          git push
+      - name: Commit & Push index.html Automatically
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Auto-update index.html [skip ci]"
+          file_pattern: "index.html"
