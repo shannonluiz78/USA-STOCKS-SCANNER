@@ -9,13 +9,21 @@ on:
     - cron: '0 0 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
 jobs:
-  build-and-run:
+  build-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-
-    permissions:
-      contents: write
-
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -35,9 +43,21 @@ jobs:
       - name: Run Market Scanner Script
         run: python scanner.py
 
-      - name: Commit & Push index.html Automatically
+      - name: Commit & Push index.html
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Auto-update index.html [skip ci]"
+          commit_message: "Auto-update index.html"
           file_pattern: "index.html"
           push_options: '--force'
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
