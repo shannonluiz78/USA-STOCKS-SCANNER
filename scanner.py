@@ -155,6 +155,22 @@ MARKET_UNIVERSES = {
     }
 }
 
+def clean_json_data(obj):
+    """Recursively converts non-standard types & NaN/Infinity values to valid JSON types."""
+    if isinstance(obj, dict):
+        return {str(k): clean_json_data(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [clean_json_data(i) for i in obj]
+    elif isinstance(obj, (float, np.floating)):
+        if np.isnan(obj) or np.isinf(obj):
+            return "N/A"
+        return float(obj)
+    elif isinstance(obj, (int, np.integer)):
+        return int(obj)
+    elif pd.isna(obj):
+        return "N/A"
+    return str(obj) if isinstance(obj, (datetime.date, datetime.datetime, pd.Timestamp)) else obj
+
 def compute_rsi(series, period=14):
     if len(series) < period:
         return pd.Series([np.nan] * len(series), index=series.index)
@@ -226,7 +242,6 @@ def analyze_market_universe(market_key, market_info):
 
         ticker_obj = yf.Ticker(symbol, session=session)
 
-        # 1. Price extraction & Technical indicators
         try:
             hist = None
             if not batch_df.empty:
@@ -289,9 +304,8 @@ def analyze_market_universe(market_key, market_info):
         except Exception as e:
             print(f"⚠️ Note: Price computation skipped for {symbol}: {e}")
 
-        # 2. Metadata & Accurate TTM Dividend Yield
         try:
-            time.sleep(0.12)
+            time.sleep(0.1)
             info = {}
             try: info = ticker_obj.info or {}
             except Exception: pass
@@ -301,7 +315,6 @@ def analyze_market_universe(market_key, market_info):
             data["pe_ratio"] = round(info.get("trailingPE"), 2) if info.get("trailingPE") else "N/A"
             data["pb_ratio"] = round(info.get("priceToBook"), 2) if info.get("priceToBook") else "N/A"
 
-            # Calculation of TTM Dividend Yield from payout events
             ttm_yield = 0.0
             try:
                 divs_series = ticker_obj.dividends
@@ -340,7 +353,6 @@ def analyze_market_universe(market_key, market_info):
             elif data["mkt_cap_raw"] > 2e9: data["moat"] = "NARROW MOAT"
             else: data["moat"] = "MODERATE MOAT"
 
-            # 3. 5-Year Financial Statements
             try:
                 fin = ticker_obj.financials
                 if fin is not None and not fin.empty:
@@ -352,7 +364,6 @@ def analyze_market_universe(market_key, market_info):
                     data["net_income"] = [format_compact(net_row[c]) if net_row is not None and c in net_row else "N/A" for c in cols][::-1]
             except Exception: pass
 
-            # 4. 5-Year Cash Flow
             try:
                 cf = ticker_obj.cashflow
                 if cf is not None and not cf.empty:
@@ -366,7 +377,6 @@ def analyze_market_universe(market_key, market_info):
                     data["fcf"] = [format_compact(v) for v in fcf_vals][::-1]
             except Exception: pass
 
-            # 5. 5-Year Historical Dividends & Annual Yield %
             try:
                 divs = ticker_obj.dividends
                 if divs is not None and not divs.empty:
@@ -401,7 +411,6 @@ def analyze_market_universe(market_key, market_info):
                     data["hist_div_yield"] = ["0.00%"] * len(data["years"])
             except Exception: pass
 
-            # 6. Balance Sheet Breakdown
             try:
                 bs = ticker_obj.balance_sheet
                 if bs is not None and not bs.empty:
@@ -419,7 +428,6 @@ def analyze_market_universe(market_key, market_info):
         except Exception as e:
             print(f"⚠️ Note: Fundamentals skipped for {symbol}: {e}")
 
-        # Allocation Scoring
         short_score = 0
         if "BULLISH TREND" in data["signal"]: short_score += 30
         if data["vol_surge"]: short_score += 20
@@ -440,7 +448,6 @@ def analyze_market_universe(market_key, market_info):
     return analyzed_stocks
 
 def allocate_6_recommendations(stock_data_list):
-    """Allocates 2 Short-Term, 2 Mid-Term, and 2 Long-Term opportunities without duplicates."""
     selected = set()
     recs = []
 
@@ -464,33 +471,6 @@ def allocate_6_recommendations(stock_data_list):
 
     return recs
 
-def send_telegram_alert(all_markets_recs):
-    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-    if not bot_token or not chat_id: return
-
-    date_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    msg_lines = [f"🚨 <b>GLOBAL MULTI-MARKET SCANNER ALERTS</b> ({date_str})\n"]
-
-    for m_key, recs in all_markets_recs.items():
-        m_name = MARKET_UNIVERSES[m_key]["name"]
-        curr = MARKET_UNIVERSES[m_key]["currency"]
-        msg_lines.append(f"🌐 <b>{m_name} TOP 6 OPPORTUNITIES:</b>")
-        for rec in recs:
-            s = rec["data"]
-            price_str = f"{curr}{s['price']:.2f}" if isinstance(s['price'], (int, float)) else "N/A"
-            msg_lines.append(
-                f"• [{rec['bucket']}] <b>{s['ticker']} ({s['name']})</b>\n"
-                f"  <b>Price:</b> {price_str} | <b>Signal:</b> <code>{s['signal']}</code>\n"
-                f"  <b>RSI:</b> {s['rsi']} | <b>Div Yield:</b> {format_pct(s['div_yield'])}\n"
-            )
-        msg_lines.append("")
-
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": "\n".join(msg_lines), "parse_mode": "HTML", "disable_web_page_preview": True}
-    try: requests.post(url, json=payload, timeout=10)
-    except Exception: pass
-
 def render_html_dashboard(all_market_data, all_market_recs):
     timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
@@ -511,7 +491,8 @@ def render_html_dashboard(all_market_data, all_market_recs):
             stk = rec["data"]
             price_str = f"{curr}{stk['price']:.2f}" if isinstance(stk['price'], (int, float)) else "N/A"
             div_str = format_pct(stk["div_yield"])
-            canvas_id = f"chart_{m_key}_{stk['ticker'].replace('.', '_')}"
+            clean_ticker = stk['ticker'].replace('.', '_').replace('-', '_')
+            canvas_id = f"chart_{m_key}_{clean_ticker}"
 
             rec_cards_html += f"""
             <div class="rec-card" onclick="openModal('{m_key}', '{stk['ticker']}')">
@@ -556,7 +537,7 @@ def render_html_dashboard(all_market_data, all_market_recs):
                 <td>{div_str}</td>
                 <td>{stk['target_price']}</td>
                 <td>{stk['mkt_cap']}</td>
-                <td><button class="btn-detail">Deep Dive & Chart</button></td>
+                <td><button class="btn-detail" onclick="event.stopPropagation(); openModal('{m_key}', '{stk['ticker']}')">Deep Dive & Chart</button></td>
             </tr>
             """
 
@@ -592,8 +573,11 @@ def render_html_dashboard(all_market_data, all_market_recs):
         """
         is_first = False
 
-    json_all_data = {m_key: {s["ticker"]: s for s in stocks} for m_key, stocks in all_market_data.items()}
-    json_all_recs = {m_key: [r["data"]["ticker"] for r in recs] for m_key, recs in all_market_recs.items()}
+    raw_json_data = {m_key: {s["ticker"]: s for s in stocks} for m_key, stocks in all_market_data.items()}
+    raw_json_recs = {m_key: [r["data"]["ticker"] for r in recs] for m_key, recs in all_market_recs.items()}
+
+    clean_data = clean_json_data(raw_json_data)
+    clean_recs = clean_json_data(raw_json_recs)
 
     html_template = """<!DOCTYPE html>
 <html lang="en">
@@ -744,7 +728,7 @@ def render_html_dashboard(all_market_data, all_market_recs):
             </div>
             <div class="form-group">
                 <label>Repository Name:</label>
-                <input type="text" id="ghRepo" class="form-control" placeholder="e.g. sgx-stock-scanner">
+                <input type="text" id="ghRepo" class="form-control" placeholder="e.g. stock-scanner">
             </div>
             <div class="form-group">
                 <label>GitHub Personal Access Token (PAT):</label>
@@ -766,144 +750,191 @@ def render_html_dashboard(all_market_data, all_market_recs):
         let activeModalMarket = null;
 
         window.onload = function() {
-            if (localStorage.getItem("gh_user")) document.getElementById('ghUser').value = localStorage.getItem("gh_user");
-            if (localStorage.getItem("gh_repo")) document.getElementById('ghRepo').value = localStorage.getItem("gh_repo");
-            if (localStorage.getItem("gh_token")) document.getElementById('ghToken').value = localStorage.getItem("gh_token");
+            try {
+                if (localStorage.getItem("gh_user")) document.getElementById('ghUser').value = localStorage.getItem("gh_user");
+                if (localStorage.getItem("gh_repo")) document.getElementById('ghRepo').value = localStorage.getItem("gh_repo");
+                if (localStorage.getItem("gh_token")) document.getElementById('ghToken').value = localStorage.getItem("gh_token");
+            } catch(e) {}
 
             renderAllMiniCharts();
         };
 
-        function switchTab(evt, marketKey) {
-            activeMarket = marketKey;
-            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+        window.onclick = function(event) {
+            const m1 = document.getElementById('deepDiveModal');
+            const m2 = document.getElementById('triggerModal');
+            if (event.target === m1) closeModal();
+            if (event.target === m2) closeTriggerModal();
+        };
 
-            const contentEl = document.getElementById('tab-' + marketKey);
-            if (contentEl) contentEl.classList.add('active');
-            
-            if (evt && evt.currentTarget) evt.currentTarget.classList.add('active');
-            renderAllMiniCharts();
+        function switchTab(evt, marketKey) {
+            try {
+                activeMarket = marketKey;
+                document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+                document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+
+                const contentEl = document.getElementById('tab-' + marketKey);
+                if (contentEl) contentEl.classList.add('active');
+                
+                if (evt && evt.target) {
+                    const btn = evt.target.closest('.tab-btn');
+                    if (btn) btn.classList.add('active');
+                }
+                renderAllMiniCharts();
+            } catch(err) {
+                console.error("Tab switch error:", err);
+            }
         }
 
         function renderAllMiniCharts() {
-            const recTickers = allMarketRecs[activeMarket] || [];
-            const marketData = allMarketData[activeMarket] || {};
+            try {
+                const recTickers = allMarketRecs[activeMarket] || [];
+                const marketData = allMarketData[activeMarket] || {};
 
-            recTickers.forEach(ticker => {
-                const item = marketData[ticker];
-                if (item && item.hist_prices && item.hist_prices.length > 0) {
-                    const canvasId = `chart_${activeMarket}_${ticker.replace('.', '_')}`;
-                    const ctx = document.getElementById(canvasId);
-                    if (ctx && !ctx.getAttribute('data-chart-rendered')) {
-                        new Chart(ctx, {
-                            type: 'line',
-                            data: {
-                                labels: item.hist_labels,
-                                datasets: [{
-                                    data: item.hist_prices,
-                                    borderColor: '#38bdf8',
-                                    borderWidth: 2,
-                                    fill: false,
-                                    pointRadius: 0
-                                }]
-                            },
-                            options: {
-                                responsive: true,
-                                maintainAspectRatio: false,
-                                plugins: { legend: { display: false } },
-                                scales: { x: { display: false }, y: { display: false } }
-                            }
-                        });
-                        ctx.setAttribute('data-chart-rendered', 'true');
+                recTickers.forEach(ticker => {
+                    const item = marketData[ticker];
+                    if (item && Array.isArray(item.hist_prices) && item.hist_prices.length > 0) {
+                        const cleanTicker = ticker.replace(/[^a-zA-Z0-9]/g, '_');
+                        const canvasId = `chart_${activeMarket}_${cleanTicker}`;
+                        const canvas = document.getElementById(canvasId);
+                        if (canvas && !canvas.getAttribute('data-chart-rendered')) {
+                            const ctx = canvas.getContext('2d');
+                            new Chart(ctx, {
+                                type: 'line',
+                                data: {
+                                    labels: item.hist_labels || [],
+                                    datasets: [{
+                                        data: item.hist_prices,
+                                        borderColor: '#38bdf8',
+                                        borderWidth: 2,
+                                        fill: false,
+                                        pointRadius: 0
+                                    }]
+                                },
+                                options: {
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    plugins: { legend: { display: false } },
+                                    scales: { x: { display: false }, y: { display: false } }
+                                }
+                            });
+                            canvas.setAttribute('data-chart-rendered', 'true');
+                        }
                     }
-                }
-            });
+                });
+            } catch(e) {
+                console.error("Mini chart render error:", e);
+            }
         }
 
         function openModal(marketKey, ticker) {
-            const item = (allMarketData[marketKey] || {})[ticker];
-            if (!item) return;
+            try {
+                const marketObj = allMarketData[marketKey] || {};
+                const item = marketObj[ticker];
+                if (!item) return;
 
-            activeModalMarket = marketKey;
-            activeModalTicker = ticker;
+                activeModalMarket = marketKey;
+                activeModalTicker = ticker;
 
-            document.getElementById('m-title').innerText = item.ticker + ' - ' + item.name;
-            document.getElementById('m-subtitle').innerText = item.sector + ' | ' + item.mkt_cap + ' Market Cap';
-            document.getElementById('m-st-debt').innerText = item.short_debt;
-            document.getElementById('m-lt-debt').innerText = item.long_debt;
-            document.getElementById('m-cash').innerText = item.assets_cash;
-            document.getElementById('m-ppe').innerText = item.assets_ppe;
-            document.getElementById('m-target').innerText = item.target_price;
-            document.getElementById('m-moat').innerText = item.moat;
+                document.getElementById('m-title').innerText = (item.ticker || '') + ' - ' + (item.name || '');
+                document.getElementById('m-subtitle').innerText = (item.sector || '') + ' | ' + (item.mkt_cap || 'N/A') + ' Market Cap';
+                document.getElementById('m-st-debt').innerText = item.short_debt || 'N/A';
+                document.getElementById('m-lt-debt').innerText = item.long_debt || 'N/A';
+                document.getElementById('m-cash').innerText = item.assets_cash || 'N/A';
+                document.getElementById('m-ppe').innerText = item.assets_ppe || 'N/A';
+                document.getElementById('m-target').innerText = item.target_price || 'N/A';
+                document.getElementById('m-moat').innerText = item.moat || 'N/A';
 
-            const yearsHeader = '<th>Metric</th>' + (item.years && item.years.length > 0 ? item.years.map(y => `<th>${y}</th>`).join('') : '<th>N/A</th>');
-            document.getElementById('m-hist-years').innerHTML = yearsHeader;
-            
-            document.getElementById('m-hist-rev').innerHTML = '<td>Revenue</td>' + (item.revenue && item.revenue.length > 0 ? item.revenue.map(v => `<td>${v}</td>`).join('') : '<td>N/A</td>');
-            document.getElementById('m-hist-net').innerHTML = '<td>Net Income</td>' + (item.net_income && item.net_income.length > 0 ? item.net_income.map(v => `<td>${v}</td>`).join('') : '<td>N/A</td>');
-            document.getElementById('m-hist-ocf').innerHTML = '<td>Op Cashflow</td>' + (item.ocf && item.ocf.length > 0 ? item.ocf.map(v => `<td>${v}</td>`).join('') : '<td>N/A</td>');
-            document.getElementById('m-hist-fcf').innerHTML = '<td>Free Cashflow</td>' + (item.fcf && item.fcf.length > 0 ? item.fcf.map(v => `<td>${v}</td>`).join('') : '<td>N/A</td>');
-            document.getElementById('m-hist-div').innerHTML = '<td>Div / Share (DPS)</td>' + (item.dividends && item.dividends.length > 0 ? item.dividends.map(v => `<td>${v}</td>`).join('') : '<td>N/A</td>');
-            document.getElementById('m-hist-yield').innerHTML = '<td>Hist. Div Yield</td>' + (item.hist_div_yield && item.hist_div_yield.length > 0 ? item.hist_div_yield.map(v => `<td>${v}</td>`).join('') : '<td>N/A</td>');
+                const years = Array.isArray(item.years) ? item.years : [];
+                const rev = Array.isArray(item.revenue) ? item.revenue : [];
+                const net = Array.isArray(item.net_income) ? item.net_income : [];
+                const ocf = Array.isArray(item.ocf) ? item.ocf : [];
+                const fcf = Array.isArray(item.fcf) ? item.fcf : [];
+                const div = Array.isArray(item.dividends) ? item.dividends : [];
+                const yld = Array.isArray(item.hist_div_yield) ? item.hist_div_yield : [];
 
-            document.getElementById('deepDiveModal').style.display = 'flex';
-            updateModalChart('1Y');
+                document.getElementById('m-hist-years').innerHTML = '<th>Metric</th>' + (years.length ? years.map(y => `<th>${y}</th>`).join('') : '<th>N/A</th>');
+                document.getElementById('m-hist-rev').innerHTML = '<td>Revenue</td>' + (rev.length ? rev.map(v => `<td>${v}</td>`).join('') : '<td>N/A</td>');
+                document.getElementById('m-hist-net').innerHTML = '<td>Net Income</td>' + (net.length ? net.map(v => `<td>${v}</td>`).join('') : '<td>N/A</td>');
+                document.getElementById('m-hist-ocf').innerHTML = '<td>Op Cashflow</td>' + (ocf.length ? ocf.map(v => `<td>${v}</td>`).join('') : '<td>N/A</td>');
+                document.getElementById('m-hist-fcf').innerHTML = '<td>Free Cashflow</td>' + (fcf.length ? fcf.map(v => `<td>${v}</td>`).join('') : '<td>N/A</td>');
+                document.getElementById('m-hist-div').innerHTML = '<td>Div / Share (DPS)</td>' + (div.length ? div.map(v => `<td>${v}</td>`).join('') : '<td>N/A</td>');
+                document.getElementById('m-hist-yield').innerHTML = '<td>Hist. Div Yield</td>' + (yld.length ? yld.map(v => `<td>${v}</td>`).join('') : '<td>N/A</td>');
+
+                document.getElementById('deepDiveModal').style.display = 'flex';
+                updateModalChart('1Y');
+            } catch(err) {
+                console.error("Open modal error:", err);
+            }
         }
 
         function updateModalChart(timeframe) {
-            if (!activeModalMarket || !activeModalTicker) return;
-            const item = (allMarketData[activeModalMarket] || {})[activeModalTicker];
-            if (!item) return;
+            try {
+                if (!activeModalMarket || !activeModalTicker) return;
+                const item = (allMarketData[activeModalMarket] || {})[activeModalTicker];
+                if (!item) return;
 
-            const dates = item.daily_dates || [];
-            const prices = item.daily_prices || [];
-            if (dates.length === 0 || prices.length === 0) return;
+                const dates = Array.isArray(item.daily_dates) ? item.daily_dates : [];
+                const prices = Array.isArray(item.daily_prices) ? item.daily_prices : [];
 
-            const buttons = document.querySelectorAll('.tf-btn');
-            buttons.forEach(btn => {
-                if (btn.innerText === timeframe) btn.classList.add('active');
-                else btn.classList.remove('active');
-            });
+                const buttons = document.querySelectorAll('.tf-btn');
+                buttons.forEach(btn => {
+                    if (btn.innerText.trim() === timeframe) btn.classList.add('active');
+                    else btn.classList.remove('active');
+                });
 
-            let count = dates.length;
-            if (timeframe === '1M') count = Math.min(21, dates.length);
-            else if (timeframe === '3M') count = Math.min(63, dates.length);
-            else if (timeframe === '6M') count = Math.min(126, dates.length);
-            else if (timeframe === '1Y') count = Math.min(252, dates.length);
-            else if (timeframe === '3Y') count = Math.min(756, dates.length);
-            else if (timeframe === '5Y') count = dates.length;
+                const canvas = document.getElementById('modalChartCanvas');
+                if (!canvas) return;
 
-            const filteredDates = dates.slice(-count);
-            const filteredPrices = prices.slice(-count);
-
-            const ctx = document.getElementById('modalChartCanvas').getContext('2d');
-            if (modalChartInstance) modalChartInstance.destroy();
-
-            modalChartInstance = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: filteredDates,
-                    datasets: [{
-                        label: 'Price',
-                        data: filteredPrices,
-                        borderColor: '#38bdf8',
-                        backgroundColor: 'rgba(56, 189, 248, 0.1)',
-                        borderWidth: 2,
-                        fill: true,
-                        pointRadius: 1,
-                        tension: 0.1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                        x: { grid: { color: '#1e293b' }, ticks: { color: '#94a3b8', maxTicksLimit: 8 } },
-                        y: { grid: { color: '#1e293b' }, ticks: { color: '#94a3b8' } }
-                    }
+                if (dates.length === 0 || prices.length === 0) {
+                    if (modalChartInstance) { modalChartInstance.destroy(); modalChartInstance = null; }
+                    return;
                 }
-            });
+
+                let count = dates.length;
+                if (timeframe === '1M') count = Math.min(21, dates.length);
+                else if (timeframe === '3M') count = Math.min(63, dates.length);
+                else if (timeframe === '6M') count = Math.min(126, dates.length);
+                else if (timeframe === '1Y') count = Math.min(252, dates.length);
+                else if (timeframe === '3Y') count = Math.min(756, dates.length);
+                else if (timeframe === '5Y') count = dates.length;
+
+                const filteredDates = dates.slice(-count);
+                const filteredPrices = prices.slice(-count);
+
+                if (modalChartInstance) {
+                    modalChartInstance.destroy();
+                    modalChartInstance = null;
+                }
+
+                const ctx = canvas.getContext('2d');
+                modalChartInstance = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: filteredDates,
+                        datasets: [{
+                            label: 'Price',
+                            data: filteredPrices,
+                            borderColor: '#38bdf8',
+                            backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            pointRadius: 1,
+                            tension: 0.1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: { grid: { color: '#1e293b' }, ticks: { color: '#94a3b8', maxTicksLimit: 8 } },
+                            y: { grid: { color: '#1e293b' }, ticks: { color: '#94a3b8' } }
+                        }
+                    }
+                });
+            } catch(err) {
+                console.error("Modal chart error:", err);
+            }
         }
 
         function closeModal() {
@@ -928,9 +959,11 @@ def render_html_dashboard(all_market_data, all_market_recs):
                 return;
             }
 
-            localStorage.setItem("gh_user", user);
-            localStorage.setItem("gh_repo", repo);
-            localStorage.setItem("gh_token", token);
+            try {
+                localStorage.setItem("gh_user", user);
+                localStorage.setItem("gh_repo", repo);
+                localStorage.setItem("gh_token", token);
+            } catch(e) {}
 
             const btn = document.getElementById("btnRunAction");
             btn.innerText = "⏳ Triggering...";
@@ -968,8 +1001,8 @@ def render_html_dashboard(all_market_data, all_market_recs):
     html_doc = html_template.replace("__TIMESTAMP__", timestamp)\
                            .replace("__TAB_BUTTONS__", tab_buttons_html)\
                            .replace("__TAB_CONTENTS__", tab_contents_html)\
-                           .replace("__ALL_MARKET_DATA__", json.dumps(json_all_data))\
-                           .replace("__ALL_MARKET_RECS__", json.dumps(json_all_recs))
+                           .replace("__ALL_MARKET_DATA__", json.dumps(clean_data))\
+                           .replace("__ALL_MARKET_RECS__", json.dumps(clean_recs))
 
     output_filename = "index.html"
     with open(output_filename, "w", encoding="utf-8") as f:
@@ -988,7 +1021,6 @@ def main():
         all_market_recs[m_key] = recs
 
     render_html_dashboard(all_market_data, all_market_recs)
-    send_telegram_alert(all_market_recs)
 
 if __name__ == "__main__":
     main()
