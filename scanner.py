@@ -222,7 +222,9 @@ def generate_dashboard():
         .metric-card span {{ display: block; font-size: 11px; color: #64748b; margin-bottom: 3px; font-weight: 600; text-transform: uppercase; }}
         .metric-card strong {{ display: block; font-size: 14px; color: #f8fafc; font-weight: bold; }}
         
+        /* Fixed Chart Box and Wrapper to prevent height expansion */
         .chart-box {{ background: #0b1329; padding: 16px; border-radius: 10px; border: 1px solid #1e293b; margin-top: 16px; }}
+        .chart-wrapper {{ position: relative; height: 250px; width: 100%; }}
         .timeframe-selector {{ display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }}
         .tf-btn {{ background: #1e293b; color: #94a3b8; border: 1px solid #334155; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; transition: 0.2s; }}
         .tf-btn:hover {{ background: #334155; color: #ffffff; }}
@@ -293,7 +295,9 @@ def generate_dashboard():
                         <button class="tf-btn" id="tf-5Y" onclick="updateChartTimeframe('5Y')">5Y</button>
                     </div>
                 </div>
-                <canvas id="modalChart" height="200"></canvas>
+                <div class="chart-wrapper">
+                    <canvas id="modalChart"></canvas>
+                </div>
             </div>
 
             <div style="display: flex; gap: 10px; margin-top: 18px;">
@@ -492,7 +496,7 @@ def generate_dashboard():
     
     with open('index.html', 'w', encoding='utf-8') as f:
         f.write(html_content)
-    print("Successfully generated index.html with complete features.")
+    print("Successfully generated index.html with fixed chart canvas dimensions.")
 
 if __name__ == '__main__':
     generate_dashboard()
