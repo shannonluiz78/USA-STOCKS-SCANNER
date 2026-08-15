@@ -291,7 +291,7 @@ def analyze_market_universe(market_key, market_info):
 
         # 2. Metadata & Accurate TTM Dividend Yield
         try:
-            time.sleep(0.15)
+            time.sleep(0.12)
             info = {}
             try: info = ticker_obj.info or {}
             except Exception: pass
@@ -301,7 +301,7 @@ def analyze_market_universe(market_key, market_info):
             data["pe_ratio"] = round(info.get("trailingPE"), 2) if info.get("trailingPE") else "N/A"
             data["pb_ratio"] = round(info.get("priceToBook"), 2) if info.get("priceToBook") else "N/A"
 
-            # TTM Dividend Yield calculation from payout history
+            # Calculation of TTM Dividend Yield from payout events
             ttm_yield = 0.0
             try:
                 divs_series = ticker_obj.dividends
@@ -419,7 +419,7 @@ def analyze_market_universe(market_key, market_info):
         except Exception as e:
             print(f"⚠️ Note: Fundamentals skipped for {symbol}: {e}")
 
-        # Horizon Scores for Recommendation Allocation
+        # Allocation Scoring
         short_score = 0
         if "BULLISH TREND" in data["signal"]: short_score += 30
         if data["vol_surge"]: short_score += 20
@@ -440,25 +440,22 @@ def analyze_market_universe(market_key, market_info):
     return analyzed_stocks
 
 def allocate_6_recommendations(stock_data_list):
-    """Selects 2 Short-Term, 2 Mid-Term, and 2 Long-Term non-overlapping stocks."""
+    """Allocates 2 Short-Term, 2 Mid-Term, and 2 Long-Term opportunities without duplicates."""
     selected = set()
     recs = []
 
-    # 1. Top 2 Short-Term
     sorted_short = sorted(stock_data_list, key=lambda x: x["scores"]["short"], reverse=True)
     p_short = [s for s in sorted_short if s["ticker"] not in selected][:2]
     for s in p_short:
         selected.add(s["ticker"])
         recs.append({"bucket": "⚡ SHORT-TERM PLAY", "badge_class": "b-momentum", "data": s})
 
-    # 2. Top 2 Mid-Term
     sorted_mid = sorted(stock_data_list, key=lambda x: x["scores"]["mid"], reverse=True)
     p_mid = [s for s in sorted_mid if s["ticker"] not in selected][:2]
     for s in p_mid:
         selected.add(s["ticker"])
         recs.append({"bucket": "📈 MID-TERM GROWTH", "badge_class": "b-growth", "data": s})
 
-    # 3. Top 2 Long-Term
     sorted_long = sorted(stock_data_list, key=lambda x: x["scores"]["long"], reverse=True)
     p_long = [s for s in sorted_long if s["ticker"] not in selected][:2]
     for s in p_long:
@@ -504,12 +501,11 @@ def render_html_dashboard(all_market_data, all_market_recs):
     for m_key, m_info in MARKET_UNIVERSES.items():
         active_cls = "active" if is_first else ""
         curr = m_info["currency"]
-        tab_buttons_html += f'<button class="tab-btn {active_cls}" onclick="switchTab(\'{m_key}\')">{m_info["name"]}</button>'
+        tab_buttons_html += f'<button class="tab-btn {active_cls}" onclick="switchTab(event, \'{m_key}\')">{m_info["name"]}</button>'
 
         recs = all_market_recs[m_key]
         stocks = all_market_data[m_key]
 
-        # Recommendation Cards
         rec_cards_html = ""
         for rec in recs:
             stk = rec["data"]
@@ -539,7 +535,6 @@ def render_html_dashboard(all_market_data, all_market_recs):
             </div>
             """
 
-        # Scan Table Rows
         table_rows_html = ""
         for stk in stocks:
             price_str = f"{curr}{stk['price']:.2f}" if isinstance(stk['price'], (int, float)) else "N/A"
@@ -597,11 +592,10 @@ def render_html_dashboard(all_market_data, all_market_recs):
         """
         is_first = False
 
-    # Store full JSON data for modal interactivity
     json_all_data = {m_key: {s["ticker"]: s for s in stocks} for m_key, stocks in all_market_data.items()}
     json_all_recs = {m_key: [r["data"]["ticker"] for r in recs] for m_key, recs in all_market_recs.items()}
 
-    html_doc = f"""<!DOCTYPE html>
+    html_template = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -609,67 +603,67 @@ def render_html_dashboard(all_market_data, all_market_recs):
     <title>Global Stock Scanner Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        * {{ box-sizing: border-box; }}
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 24px; background: #0b1120; color: #f8fafc; }}
-        .container {{ max-width: 1380px; margin: 0 auto; }}
-        .header {{ display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 16px; margin-bottom: 20px; position: relative; z-index: 10; }}
-        h1 {{ font-size: 1.8rem; margin: 0; color: #38bdf8; }}
-        .text-muted {{ color: #94a3b8; font-size: 0.85rem; }}
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 24px; background: #0b1120; color: #f8fafc; }
+        .container { max-width: 1380px; margin: 0 auto; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 16px; margin-bottom: 20px; position: relative; z-index: 10; }
+        h1 { font-size: 1.8rem; margin: 0; color: #38bdf8; }
+        .text-muted { color: #94a3b8; font-size: 0.85rem; }
         
-        /* Tabs Styling */
-        .tabs {{ display: flex; gap: 10px; margin-bottom: 24px; border-bottom: 1px solid #1e293b; padding-bottom: 12px; }}
-        .tab-btn {{ background: #1e293b; border: 1px solid #334155; color: #cbd5e1; padding: 10px 20px; border-radius: 8px; font-weight: 700; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; }}
-        .tab-btn:hover {{ background: #334155; color: #fff; }}
-        .tab-btn.active {{ background: #0284c7; color: #fff; border-color: #38bdf8; }}
+        /* Tabs */
+        .tabs { display: flex; gap: 10px; margin-bottom: 24px; border-bottom: 1px solid #1e293b; padding-bottom: 12px; }
+        .tab-btn { background: #1e293b; border: 1px solid #334155; color: #cbd5e1; padding: 10px 20px; border-radius: 8px; font-weight: 700; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; }
+        .tab-btn:hover { background: #334155; color: #fff; }
+        .tab-btn.active { background: #0284c7; color: #fff; border-color: #38bdf8; }
         
-        .tab-content {{ display: none; }}
-        .tab-content.active {{ display: block; }}
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
 
-        .btn-trigger {{ background: #0284c7; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 0.88rem; transition: background 0.2s; }}
-        .btn-trigger:hover {{ background: #0369a1; }}
+        .btn-trigger { background: #0284c7; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 0.88rem; transition: background 0.2s; }
+        .btn-trigger:hover { background: #0369a1; }
         
-        .section-title {{ font-size: 1.2rem; font-weight: 700; color: #f1f5f9; margin-bottom: 16px; margin-top: 10px; }}
-        .rec-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-bottom: 36px; }}
-        .rec-card {{ background: #1e293b; border-radius: 12px; border: 1px solid #334155; padding: 16px; cursor: pointer; transition: transform 0.2s, border-color 0.2s; }}
-        .rec-card:hover {{ transform: translateY(-3px); border-color: #38bdf8; }}
-        .bucket-tag {{ display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; margin-bottom: 10px; }}
-        .b-momentum {{ background: rgba(250, 204, 21, 0.2); color: #facc15; }}
-        .b-growth {{ background: rgba(74, 222, 128, 0.2); color: #4ade80; }}
-        .b-compounder {{ background: rgba(192, 132, 252, 0.2); color: #c084fc; }}
-        .rec-header {{ display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }}
-        .rec-ticker {{ font-size: 1.1rem; font-weight: 800; color: #f8fafc; }}
-        .rec-name {{ font-size: 0.8rem; color: #94a3b8; }}
-        .rec-price {{ font-size: 1.2rem; font-weight: 700; color: #f8fafc; }}
-        .rec-stats {{ display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 0.75rem; color: #cbd5e1; margin-bottom: 12px; background: #0f172a; padding: 8px; border-radius: 6px; }}
-        .chart-container {{ height: 90px; width: 100%; }}
+        .section-title { font-size: 1.2rem; font-weight: 700; color: #f1f5f9; margin-bottom: 16px; margin-top: 10px; }
+        .rec-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-bottom: 36px; }
+        .rec-card { background: #1e293b; border-radius: 12px; border: 1px solid #334155; padding: 16px; cursor: pointer; transition: transform 0.2s, border-color 0.2s; }
+        .rec-card:hover { transform: translateY(-3px); border-color: #38bdf8; }
+        .bucket-tag { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; margin-bottom: 10px; }
+        .b-momentum { background: rgba(250, 204, 21, 0.2); color: #facc15; }
+        .b-growth { background: rgba(74, 222, 128, 0.2); color: #4ade80; }
+        .b-compounder { background: rgba(192, 132, 252, 0.2); color: #c084fc; }
+        .rec-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+        .rec-ticker { font-size: 1.1rem; font-weight: 800; color: #f8fafc; }
+        .rec-name { font-size: 0.8rem; color: #94a3b8; }
+        .rec-price { font-size: 1.2rem; font-weight: 700; color: #f8fafc; }
+        .rec-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 0.75rem; color: #cbd5e1; margin-bottom: 12px; background: #0f172a; padding: 8px; border-radius: 6px; }
+        .chart-container { height: 90px; width: 100%; }
         
-        .table-card {{ background: #1e293b; border-radius: 12px; border: 1px solid #334155; overflow-x: auto; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3); }}
-        table {{ width: 100%; border-collapse: collapse; text-align: left; font-size: 0.88rem; }}
-        th {{ background: #0f172a; padding: 14px 16px; color: #cbd5e1; font-weight: 600; border-bottom: 1px solid #334155; text-transform: uppercase; font-size: 0.75rem; }}
-        td {{ padding: 12px 16px; border-bottom: 1px solid #334155; vertical-align: middle; }}
-        tr:hover {{ background: #26354a; }}
-        .badge {{ display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; }}
-        .pos {{ background: rgba(34, 197, 94, 0.15); color: #4ade80; }}
-        .neg {{ background: rgba(239, 68, 68, 0.15); color: #f87171; }}
-        .neu {{ background: rgba(148, 163, 184, 0.15); color: #cbd5e1; }}
-        .signal-tag {{ font-weight: 700; font-size: 0.75rem; color: #38bdf8; }}
-        .btn-detail {{ background: #0284c7; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.75rem; }}
+        .table-card { background: #1e293b; border-radius: 12px; border: 1px solid #334155; overflow-x: auto; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3); }
+        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.88rem; }
+        th { background: #0f172a; padding: 14px 16px; color: #cbd5e1; font-weight: 600; border-bottom: 1px solid #334155; text-transform: uppercase; font-size: 0.75rem; }
+        td { padding: 12px 16px; border-bottom: 1px solid #334155; vertical-align: middle; }
+        tr:hover { background: #26354a; }
+        .badge { display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; }
+        .pos { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+        .neg { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+        .neu { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; }
+        .signal-tag { font-weight: 700; font-size: 0.75rem; color: #38bdf8; }
+        .btn-detail { background: #0284c7; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.75rem; }
         
         /* Modal Styles */
-        .modal {{ display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); justify-content: center; align-items: center; z-index: 1000; padding: 20px; }}
-        .modal-content {{ background: #1e293b; max-width: 900px; width: 100%; max-height: 92vh; border-radius: 12px; border: 1px solid #475569; overflow-y: auto; padding: 24px; position: relative; color: #f8fafc; }}
-        .close-btn {{ position: absolute; top: 16px; right: 20px; font-size: 1.5rem; color: #94a3b8; cursor: pointer; }}
-        .form-group {{ margin-bottom: 14px; text-align: left; }}
-        .form-group label {{ display: block; margin-bottom: 4px; font-weight: 600; font-size: 0.85rem; color: #cbd5e1; }}
-        .form-control {{ width: 100%; padding: 10px 12px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; color: #f8fafc; font-size: 0.9rem; }}
+        .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); justify-content: center; align-items: center; z-index: 1000; padding: 20px; }
+        .modal-content { background: #1e293b; max-width: 900px; width: 100%; max-height: 92vh; border-radius: 12px; border: 1px solid #475569; overflow-y: auto; padding: 24px; position: relative; color: #f8fafc; }
+        .close-btn { position: absolute; top: 16px; right: 20px; font-size: 1.5rem; color: #94a3b8; cursor: pointer; }
+        .form-group { margin-bottom: 14px; text-align: left; }
+        .form-group label { display: block; margin-bottom: 4px; font-weight: 600; font-size: 0.85rem; color: #cbd5e1; }
+        .form-control { width: 100%; padding: 10px 12px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; color: #f8fafc; font-size: 0.9rem; }
         
-        .data-table {{ width: 100%; margin-top: 12px; border: 1px solid #334155; }}
-        .data-table th, .data-table td {{ border: 1px solid #334155; padding: 8px; text-align: center; font-size: 0.8rem; }}
-        .modal-chart-box {{ background: #0f172a; padding: 16px; border-radius: 8px; margin: 16px 0; }}
-        .tf-btn-group {{ display: flex; gap: 8px; margin-bottom: 12px; justify-content: flex-end; }}
-        .tf-btn {{ background: #334155; color: #cbd5e1; border: none; padding: 5px 12px; border-radius: 4px; font-weight: 600; font-size: 0.75rem; cursor: pointer; transition: all 0.2s; }}
-        .tf-btn.active, .tf-btn:hover {{ background: #0284c7; color: white; }}
-        .big-chart-container {{ height: 260px; width: 100%; position: relative; }}
+        .data-table { width: 100%; margin-top: 12px; border: 1px solid #334155; }
+        .data-table th, .data-table td { border: 1px solid #334155; padding: 8px; text-align: center; font-size: 0.8rem; }
+        .modal-chart-box { background: #0f172a; padding: 16px; border-radius: 8px; margin: 16px 0; }
+        .tf-btn-group { display: flex; gap: 8px; margin-bottom: 12px; justify-content: flex-end; }
+        .tf-btn { background: #334155; color: #cbd5e1; border: none; padding: 5px 12px; border-radius: 4px; font-weight: 600; font-size: 0.75rem; cursor: pointer; transition: all 0.2s; }
+        .tf-btn.active, .tf-btn:hover { background: #0284c7; color: white; }
+        .big-chart-container { height: 260px; width: 100%; position: relative; }
     </style>
 </head>
 <body>
@@ -678,7 +672,7 @@ def render_html_dashboard(all_market_data, all_market_recs):
             <div>
                 <h1>Global Stock Scanner Dashboard</h1>
                 <div class="text-muted">Multi-Market Analysis • Dow 30, Nasdaq 100, S&P 500 & SGX</div>
-                <div class="text-muted">Updated: {timestamp}</div>
+                <div class="text-muted">Updated: __TIMESTAMP__</div>
             </div>
             <div>
                 <button class="btn-trigger" onclick="openTriggerModal()">⚡ Trigger Scan Now</button>
@@ -686,10 +680,10 @@ def render_html_dashboard(all_market_data, all_market_recs):
         </div>
 
         <div class="tabs">
-            {tab_buttons_html}
+            __TAB_BUTTONS__
         </div>
 
-        {tab_contents_html}
+        __TAB_CONTENTS__
     </div>
 
     <div id="deepDiveModal" class="modal">
@@ -764,22 +758,22 @@ def render_html_dashboard(all_market_data, all_market_recs):
     </div>
 
     <script>
-        const allMarketData = {json.dumps(json_all_data)};
-        const allMarketRecs = {json.dumps(json_all_recs)};
+        const allMarketData = __ALL_MARKET_DATA__;
+        const allMarketRecs = __ALL_MARKET_RECS__;
         let activeMarket = 'DOW30';
         let modalChartInstance = null;
         let activeModalTicker = null;
         let activeModalMarket = null;
 
-        window.onload = function() {{
+        window.onload = function() {
             if (localStorage.getItem("gh_user")) document.getElementById('ghUser').value = localStorage.getItem("gh_user");
             if (localStorage.getItem("gh_repo")) document.getElementById('ghRepo').value = localStorage.getItem("gh_repo");
             if (localStorage.getItem("gh_token")) document.getElementById('ghToken').value = localStorage.getItem("gh_token");
 
             renderAllMiniCharts();
-        }};
+        };
 
-        function switchTab(marketKey) {{
+        function switchTab(evt, marketKey) {
             activeMarket = marketKey;
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
@@ -787,47 +781,47 @@ def render_html_dashboard(all_market_data, all_market_recs):
             const contentEl = document.getElementById('tab-' + marketKey);
             if (contentEl) contentEl.classList.add('active');
             
-            event.currentTarget.classList.add('active');
+            if (evt && evt.currentTarget) evt.currentTarget.classList.add('active');
             renderAllMiniCharts();
-        }}
+        }
 
-        function renderAllMiniCharts() {{
+        function renderAllMiniCharts() {
             const recTickers = allMarketRecs[activeMarket] || [];
-            const marketData = allMarketData[activeMarket] || {{}};
+            const marketData = allMarketData[activeMarket] || {};
 
-            recTickers.forEach(ticker => {{
+            recTickers.forEach(ticker => {
                 const item = marketData[ticker];
-                if (item && item.hist_prices && item.hist_prices.length > 0) {{
-                    const canvasId = `chart_${{activeMarket}}_${{ticker.replace('.', '_')}}`;
+                if (item && item.hist_prices && item.hist_prices.length > 0) {
+                    const canvasId = `chart_${activeMarket}_${ticker.replace('.', '_')}`;
                     const ctx = document.getElementById(canvasId);
-                    if (ctx && !ctx.getAttribute('data-chart-rendered')) {{
-                        new Chart(ctx, {{
+                    if (ctx && !ctx.getAttribute('data-chart-rendered')) {
+                        new Chart(ctx, {
                             type: 'line',
-                            data: {{
+                            data: {
                                 labels: item.hist_labels,
-                                datasets: [{{
+                                datasets: [{
                                     data: item.hist_prices,
                                     borderColor: '#38bdf8',
                                     borderWidth: 2,
                                     fill: false,
                                     pointRadius: 0
-                                }}]
-                            }},
-                            options: {{
+                                }]
+                            },
+                            options: {
                                 responsive: true,
                                 maintainAspectRatio: false,
-                                plugins: {{ legend: {{ display: false }} }},
-                                scales: {{ x: {{ display: false }}, y: {{ display: false }} }}
-                            }}
-                        }});
+                                plugins: { legend: { display: false } },
+                                scales: { x: { display: false }, y: { display: false } }
+                            }
+                        });
                         ctx.setAttribute('data-chart-rendered', 'true');
-                    }}
-                }}
-            }});
-        }}
+                    }
+                }
+            });
+        }
 
-        function openModal(marketKey, ticker) {{
-            const item = (allMarketData[marketKey] || {{}})[ticker];
+        function openModal(marketKey, ticker) {
+            const item = (allMarketData[marketKey] || {})[ticker];
             if (!item) return;
 
             activeModalMarket = marketKey;
@@ -842,23 +836,23 @@ def render_html_dashboard(all_market_data, all_market_recs):
             document.getElementById('m-target').innerText = item.target_price;
             document.getElementById('m-moat').innerText = item.moat;
 
-            const yearsHeader = '<th>Metric</th>' + (item.years && item.years.length > 0 ? item.years.map(y => `<th>${{y}}</th>`).join('') : '<th>N/A</th>');
+            const yearsHeader = '<th>Metric</th>' + (item.years && item.years.length > 0 ? item.years.map(y => `<th>${y}</th>`).join('') : '<th>N/A</th>');
             document.getElementById('m-hist-years').innerHTML = yearsHeader;
             
-            document.getElementById('m-hist-rev').innerHTML = '<td>Revenue</td>' + (item.revenue && item.revenue.length > 0 ? item.revenue.map(v => `<td>${{v}}</td>`).join('') : '<td>N/A</td>');
-            document.getElementById('m-hist-net').innerHTML = '<td>Net Income</td>' + (item.net_income && item.net_income.length > 0 ? item.net_income.map(v => `<td>${{v}}</td>`).join('') : '<td>N/A</td>');
-            document.getElementById('m-hist-ocf').innerHTML = '<td>Op Cashflow</td>' + (item.ocf && item.ocf.length > 0 ? item.ocf.map(v => `<td>${{v}}</td>`).join('') : '<td>N/A</td>');
-            document.getElementById('m-hist-fcf').innerHTML = '<td>Free Cashflow</td>' + (item.fcf && item.fcf.length > 0 ? item.fcf.map(v => `<td>${{v}}</td>`).join('') : '<td>N/A</td>');
-            document.getElementById('m-hist-div').innerHTML = '<td>Div / Share (DPS)</td>' + (item.dividends && item.dividends.length > 0 ? item.dividends.map(v => `<td>${{v}}</td>`).join('') : '<td>N/A</td>');
-            document.getElementById('m-hist-yield').innerHTML = '<td>Hist. Div Yield</td>' + (item.hist_div_yield && item.hist_div_yield.length > 0 ? item.hist_div_yield.map(v => `<td>${{v}}</td>`).join('') : '<td>N/A</td>');
+            document.getElementById('m-hist-rev').innerHTML = '<td>Revenue</td>' + (item.revenue && item.revenue.length > 0 ? item.revenue.map(v => `<td>${v}</td>`).join('') : '<td>N/A</td>');
+            document.getElementById('m-hist-net').innerHTML = '<td>Net Income</td>' + (item.net_income && item.net_income.length > 0 ? item.net_income.map(v => `<td>${v}</td>`).join('') : '<td>N/A</td>');
+            document.getElementById('m-hist-ocf').innerHTML = '<td>Op Cashflow</td>' + (item.ocf && item.ocf.length > 0 ? item.ocf.map(v => `<td>${v}</td>`).join('') : '<td>N/A</td>');
+            document.getElementById('m-hist-fcf').innerHTML = '<td>Free Cashflow</td>' + (item.fcf && item.fcf.length > 0 ? item.fcf.map(v => `<td>${v}</td>`).join('') : '<td>N/A</td>');
+            document.getElementById('m-hist-div').innerHTML = '<td>Div / Share (DPS)</td>' + (item.dividends && item.dividends.length > 0 ? item.dividends.map(v => `<td>${v}</td>`).join('') : '<td>N/A</td>');
+            document.getElementById('m-hist-yield').innerHTML = '<td>Hist. Div Yield</td>' + (item.hist_div_yield && item.hist_div_yield.length > 0 ? item.hist_div_yield.map(v => `<td>${v}</td>`).join('') : '<td>N/A</td>');
 
             document.getElementById('deepDiveModal').style.display = 'flex';
             updateModalChart('1Y');
-        }}
+        }
 
-        function updateModalChart(timeframe) {{
+        function updateModalChart(timeframe) {
             if (!activeModalMarket || !activeModalTicker) return;
-            const item = (allMarketData[activeModalMarket] || {{}})[activeModalTicker];
+            const item = (allMarketData[activeModalMarket] || {})[activeModalTicker];
             if (!item) return;
 
             const dates = item.daily_dates || [];
@@ -866,10 +860,10 @@ def render_html_dashboard(all_market_data, all_market_recs):
             if (dates.length === 0 || prices.length === 0) return;
 
             const buttons = document.querySelectorAll('.tf-btn');
-            buttons.forEach(btn => {{
+            buttons.forEach(btn => {
                 if (btn.innerText === timeframe) btn.classList.add('active');
                 else btn.classList.remove('active');
-            }});
+            });
 
             let count = dates.length;
             if (timeframe === '1M') count = Math.min(21, dates.length);
@@ -885,11 +879,11 @@ def render_html_dashboard(all_market_data, all_market_recs):
             const ctx = document.getElementById('modalChartCanvas').getContext('2d');
             if (modalChartInstance) modalChartInstance.destroy();
 
-            modalChartInstance = new Chart(ctx, {{
+            modalChartInstance = new Chart(ctx, {
                 type: 'line',
-                data: {{
+                data: {
                     labels: filteredDates,
-                    datasets: [{{
+                    datasets: [{
                         label: 'Price',
                         data: filteredPrices,
                         borderColor: '#38bdf8',
@@ -898,41 +892,41 @@ def render_html_dashboard(all_market_data, all_market_recs):
                         fill: true,
                         pointRadius: 1,
                         tension: 0.1
-                    }}]
-                }},
-                options: {{
+                    }]
+                },
+                options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: {{ legend: {{ display: false }} }},
-                    scales: {{
-                        x: {{ grid: {{ color: '#1e293b' }}, ticks: {{ color: '#94a3b8', maxTicksLimit: 8 }} }},
-                        y: {{ grid: {{ color: '#1e293b' }}, ticks: {{ color: '#94a3b8' }} }}
-                    }}
-                }}
-            }});
-        }}
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { color: '#1e293b' }, ticks: { color: '#94a3b8', maxTicksLimit: 8 } },
+                        y: { grid: { color: '#1e293b' }, ticks: { color: '#94a3b8' } }
+                    }
+                }
+            });
+        }
 
-        function closeModal() {{
+        function closeModal() {
             document.getElementById('deepDiveModal').style.display = 'none';
-        }}
+        }
 
-        function openTriggerModal() {{
+        function openTriggerModal() {
             document.getElementById('triggerModal').style.display = 'flex';
-        }}
+        }
 
-        function closeTriggerModal() {{
+        function closeTriggerModal() {
             document.getElementById('triggerModal').style.display = 'none';
-        }}
+        }
 
-        async function executeScanTrigger() {{
+        async function executeScanTrigger() {
             const user = document.getElementById('ghUser').value.trim();
             const repo = document.getElementById('ghRepo').value.trim();
             const token = document.getElementById('ghToken').value.trim();
 
-            if (!user || !repo || !token) {{
+            if (!user || !repo || !token) {
                 alert("Please fill in Username, Repository Name, and Token.");
                 return;
-            }}
+            }
 
             localStorage.setItem("gh_user", user);
             localStorage.setItem("gh_repo", repo);
@@ -942,34 +936,40 @@ def render_html_dashboard(all_market_data, all_market_recs):
             btn.innerText = "⏳ Triggering...";
             btn.disabled = true;
 
-            try {{
-                const res = await fetch(`https://api.github.com/repos/${{user}}/${{repo}}/actions/workflows/scanner.yml/dispatches`, {{
+            try {
+                const res = await fetch(`https://api.github.com/repos/${user}/${repo}/actions/workflows/scanner.yml/dispatches`, {
                     method: "POST",
-                    headers: {{
+                    headers: {
                         "Accept": "application/vnd.github+json",
-                        "Authorization": `Bearer ${{token}}`,
+                        "Authorization": `Bearer ${token}`,
                         "X-GitHub-Api-Version": "2022-11-28"
-                    }},
-                    body: JSON.stringify({{ ref: "main" }})
-                }});
+                    },
+                    body: JSON.stringify({ ref: "main" })
+                });
 
-                if (res.status === 204) {{
+                if (res.status === 204) {
                     alert("🚀 Multi-Market scan triggered successfully!\n\nGitHub Actions will process live data for all markets and update this dashboard in ~2 minutes.");
                     closeTriggerModal();
-                }} else {{
+                } else {
                     const err = await res.text();
                     alert("⚠️ Trigger failed (Status " + res.status + "): " + err);
-                }}
-            }} catch (err) {{
+                }
+            } catch (err) {
                 alert("⚠️ Error triggering workflow: " + err.message);
-            }} finally {{
+            } finally {
                 btn.innerText = "🚀 Start Scan Now";
                 btn.disabled = false;
-            }}
-        }}
+            }
+        }
     </script>
 </body>
 </html>"""
+
+    html_doc = html_template.replace("__TIMESTAMP__", timestamp)\
+                           .replace("__TAB_BUTTONS__", tab_buttons_html)\
+                           .replace("__TAB_CONTENTS__", tab_contents_html)\
+                           .replace("__ALL_MARKET_DATA__", json.dumps(json_all_data))\
+                           .replace("__ALL_MARKET_RECS__", json.dumps(json_all_recs))
 
     output_filename = "index.html"
     with open(output_filename, "w", encoding="utf-8") as f:
