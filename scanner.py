@@ -47,6 +47,37 @@ def format_number(val):
     except:
         return str(val)
 
+def extract_timeframe_history(hist):
+    if hist is None or hist.empty:
+        return {
+            "1M": [145.0, 146.0, 148.0, 150.0],
+            "3M": [140.0, 142.0, 145.0, 150.0],
+            "6M": [135.0, 138.0, 145.0, 150.0],
+            "1Y": [125.0, 130.0, 140.0, 150.0],
+            "2Y": [110.0, 120.0, 135.0, 150.0],
+            "5Y": [90.0, 105.0, 125.0, 150.0]
+        }
+    
+    close_series = hist['Close']
+    
+    def sample_data(series, target_points=30):
+        if len(series) <= target_points:
+            return [round(float(p), 2) for p in series.tolist()]
+        step = max(1, len(series) // target_points)
+        sampled = series.iloc[::step].tolist()
+        if series.iloc[-1] not in sampled:
+            sampled.append(series.iloc[-1])
+        return [round(float(p), 2) for p in sampled]
+
+    return {
+        "1M": sample_data(close_series.tail(22)),
+        "3M": sample_data(close_series.tail(65)),
+        "6M": sample_data(close_series.tail(126)),
+        "1Y": sample_data(close_series.tail(252)),
+        "2Y": sample_data(close_series.tail(504)),
+        "5Y": sample_data(close_series.tail(1260))
+    }
+
 def fetch_all_markets():
     market_data = {"dow": [], "nasdaq": [], "sp500": [], "sgx": []}
     
@@ -55,7 +86,7 @@ def fetch_all_markets():
         for ticker in tickers:
             try:
                 stock = yf.Ticker(ticker, session=session)
-                hist = stock.history(period="3mo")
+                hist = stock.history(period="5y")
                 info = {}
                 try:
                     info = stock.fast_info
@@ -67,7 +98,7 @@ def fetch_all_markets():
                 if hist.empty:
                     price = 150.00
                     prev = 148.00
-                    history_list = [142.0, 144.0, 145.0, 143.0, 146.0, 148.0, 150.0]
+                    history_dict = extract_timeframe_history(None)
                     vol = "12.4M"
                     high_52 = f"{prefix}165.00"
                     low_52 = f"{prefix}120.00"
@@ -76,12 +107,12 @@ def fetch_all_markets():
                 else:
                     price = round(float(hist['Close'].iloc[-1]), 2)
                     prev = round(float(hist['Close'].iloc[-2]), 2) if len(hist) > 1 else price
-                    history_list = [round(float(p), 2) for p in hist['Close'].tail(15).tolist()]
+                    history_dict = extract_timeframe_history(hist)
                     
                     vol_num = float(hist['Volume'].iloc[-1]) if 'Volume' in hist else 0
                     vol = format_number(vol_num)
-                    high_52_num = float(hist['High'].max())
-                    low_52_num = float(hist['Low'].min())
+                    high_52_num = float(hist['High'].tail(252).max())
+                    low_52_num = float(hist['Low'].tail(252).min())
                     high_52 = f"{prefix}{high_52_num:,.2f}"
                     low_52 = f"{prefix}{low_52_num:,.2f}"
                     
@@ -123,7 +154,7 @@ def fetch_all_markets():
                     "volume": vol,
                     "tag": tag,
                     "tagClass": tag_class,
-                    "history": history_list
+                    "history": history_dict
                 }
                 market_data[market_key].append(item)
             except Exception as e:
@@ -192,6 +223,10 @@ def generate_dashboard():
         .metric-card strong {{ display: block; font-size: 14px; color: #f8fafc; font-weight: bold; }}
         
         .chart-box {{ background: #0b1329; padding: 16px; border-radius: 10px; border: 1px solid #1e293b; margin-top: 16px; }}
+        .timeframe-selector {{ display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }}
+        .tf-btn {{ background: #1e293b; color: #94a3b8; border: 1px solid #334155; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; transition: 0.2s; }}
+        .tf-btn:hover {{ background: #334155; color: #ffffff; }}
+        .tf-btn.active {{ background: #0284c7; color: #ffffff; border-color: #38bdf8; }}
         input[type="number"] {{ width: 100%; padding: 12px; margin: 14px 0; background: #0b1329; border: 1px solid #334155; color: white; border-radius: 8px; font-size: 14px; }}
     </style>
 </head>
@@ -217,7 +252,7 @@ def generate_dashboard():
 
     <div class="grid" id="cards-container"></div>
 
-    <!-- Stock Detail Modal (Full SGX Format) -->
+    <!-- Stock Detail Modal -->
     <div id="stockModal" class="modal">
         <div class="modal-content">
             <span class="close-btn" onclick="closeModal()">&times;</span>
@@ -247,8 +282,18 @@ def generate_dashboard():
             </div>
 
             <div class="chart-box">
-                <div style="font-size: 13px; font-weight: bold; color: #94a3b8; margin-bottom: 10px;">📈 15-Day Price Movement & Technical Trend</div>
-                <canvas id="modalChart" height="180"></canvas>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+                    <div style="font-size: 13px; font-weight: bold; color: #94a3b8;">📈 Historical Price Movement</div>
+                    <div class="timeframe-selector">
+                        <button class="tf-btn active" id="tf-1M" onclick="updateChartTimeframe('1M')">1M</button>
+                        <button class="tf-btn" id="tf-3M" onclick="updateChartTimeframe('3M')">3M</button>
+                        <button class="tf-btn" id="tf-6M" onclick="updateChartTimeframe('6M')">6M</button>
+                        <button class="tf-btn" id="tf-1Y" onclick="updateChartTimeframe('1Y')">1Y</button>
+                        <button class="tf-btn" id="tf-2Y" onclick="updateChartTimeframe('2Y')">2Y</button>
+                        <button class="tf-btn" id="tf-5Y" onclick="updateChartTimeframe('5Y')">5Y</button>
+                    </div>
+                </div>
+                <canvas id="modalChart" height="200"></canvas>
             </div>
 
             <div style="display: flex; gap: 10px; margin-top: 18px;">
@@ -288,6 +333,8 @@ def generate_dashboard():
         const rawData = {json_embedded};
         let currentMarket = 'dow';
         let currentSelectedTicker = '';
+        let currentModalHistory = null;
+        let isCurrentPositive = true;
         let chartInstance = null;
 
         function renderCards(marketKey) {{
@@ -344,15 +391,16 @@ def generate_dashboard():
             if (!item) return;
 
             currentSelectedTicker = item.ticker;
+            currentModalHistory = item.history;
+            isCurrentPositive = item.changeVal >= 0;
             
             document.getElementById('modalTicker').innerText = item.ticker;
             document.getElementById('modalName').innerText = item.name;
             document.getElementById('modalPrice').innerText = item.price;
             
-            const isPos = item.changeVal >= 0;
             const changeElem = document.getElementById('modalChange');
             changeElem.innerText = `${{item.change}} (${{item.changeAbs}})`;
-            changeElem.className = isPos ? 'positive' : 'negative';
+            changeElem.className = isCurrentPositive ? 'positive' : 'negative';
 
             document.getElementById('mSignal').innerText = item.signal;
             document.getElementById('mTarget').innerText = item.target;
@@ -366,21 +414,33 @@ def generate_dashboard():
 
             document.getElementById('stockModal').style.display = 'flex';
 
+            updateChartTimeframe('1M');
+        }}
+
+        function updateChartTimeframe(tf) {{
+            if (!currentModalHistory || !currentModalHistory[tf]) return;
+
+            document.querySelectorAll('.tf-btn').forEach(btn => btn.classList.remove('active'));
+            const activeTfBtn = document.getElementById('tf-' + tf);
+            if (activeTfBtn) activeTfBtn.classList.add('active');
+
+            const dataPoints = currentModalHistory[tf];
             const ctx = document.getElementById('modalChart').getContext('2d');
+            
             if (chartInstance) chartInstance.destroy();
 
             chartInstance = new Chart(ctx, {{
                 type: 'line',
                 data: {{
-                    labels: item.history.map((_, i) => `Day ${{i + 1}}`),
+                    labels: dataPoints.map((_, i) => `P${{i + 1}}`),
                     datasets: [{{
-                        label: 'Price History',
-                        data: item.history,
-                        borderColor: isPos ? '#4ade80' : '#f87171',
-                        backgroundColor: isPos ? 'rgba(74, 222, 128, 0.1)' : 'rgba(248, 113, 113, 0.1)',
+                        label: `Price (${{tf}})`,
+                        data: dataPoints,
+                        borderColor: isCurrentPositive ? '#4ade80' : '#f87171',
+                        backgroundColor: isCurrentPositive ? 'rgba(74, 222, 128, 0.1)' : 'rgba(248, 113, 113, 0.1)',
                         fill: true,
-                        tension: 0.3,
-                        borderWidth: 2.5
+                        tension: 0.25,
+                        borderWidth: 2
                     }}]
                 }},
                 options: {{
@@ -432,7 +492,7 @@ def generate_dashboard():
     
     with open('index.html', 'w', encoding='utf-8') as f:
         f.write(html_content)
-    print("Successfully generated index.html with full modal metrics format and proper rescan handler.")
+    print("Successfully generated index.html with complete features.")
 
 if __name__ == '__main__':
     generate_dashboard()
